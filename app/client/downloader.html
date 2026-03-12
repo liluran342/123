@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>智能下载管理中心</title>
+    <style>
+        :root { --bg: #0f0f0f; --panel: #1a1a1a; --accent: #3498db; --text: #eee; --green: #2ecc71; --orange: #e67e22; }
+        body { font-family: 'PingFang SC', sans-serif; background: var(--bg); color: var(--text); padding: 30px; margin: 0; }
+        .container { max-width: 1100px; margin: 0 auto; }
+        
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; border-bottom: 1px solid #333; padding-bottom: 15px; }
+
+        /* 输入面板 */
+        .add-panel { background: var(--panel); padding: 20px; border-radius: 12px; border: 1px solid #333; display: grid; grid-template-columns: 1.5fr 1fr 1fr; gap: 15px; margin-bottom: 30px; }
+        input { padding: 12px; background: #252525; border: 1px solid #444; color: #fff; border-radius: 6px; }
+        
+        #paste-zone { height: 100px; border: 2px dashed #444; border-radius: 8px; display: flex; align-items: center; justify-content: center; background: #111; cursor: pointer; overflow: hidden; }
+        #paste-zone img { height: 100%; object-fit: contain; }
+        #paste-zone.active { border-color: var(--accent); }
+
+        .btn-add { grid-column: span 3; padding: 12px; background: var(--accent); border: none; color: white; border-radius: 6px; font-weight: bold; cursor: pointer; }
+
+        /* 列表展示 */
+        .task-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 20px; }
+        .task-card { background: var(--panel); border-radius: 10px; border: 1px solid #333; overflow: hidden; position: relative; transition: 0.3s; }
+        .task-card.status-1 { border-color: var(--orange); } /* 下载中 */
+        .task-card.status-2 { opacity: 0.6; border-color: var(--green); } /* 已完成 */
+
+        .task-card img { width: 100%; aspect-ratio: 16/9; object-fit: cover; background: #000; }
+        .task-info { padding: 12px; }
+        .task-name { font-weight: bold; font-size: 15px; margin-bottom: 5px; color: var(--accent); }
+        .task-url { font-size: 11px; color: #555; word-break: break-all; height: 30px; overflow: hidden; }
+        
+        .status-badge { position: absolute; top: 10px; left: 10px; padding: 2px 6px; border-radius: 4px; font-size: 10px; color: white; font-weight: bold; }
+        .badge-0 { background: #555; }
+        .badge-1 { background: var(--orange); box-shadow: 0 0 10px var(--orange); }
+        .badge-2 { background: var(--green); }
+
+        .card-actions { display: flex; gap: 5px; padding: 10px; background: rgba(0,0,0,0.2); }
+        .card-actions button { flex: 1; padding: 5px; font-size: 11px; border: none; border-radius: 3px; cursor: pointer; color: white; }
+
+        /* 启动按钮 */
+        .start-floating-btn { position: fixed; bottom: 40px; right: 40px; width: 80px; height: 80px; border-radius: 50%; background: var(--green); border: none; color: white; font-weight: bold; cursor: pointer; box-shadow: 0 5px 20px rgba(46, 204, 113, 0.5); z-index: 100; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h1>📥 智能下载管理系统</h1>
+        <a href="index.html" style="color:#aaa; text-decoration:none;">← 返回主页</a>
+    </div>
+     <button onclick="resetAllTasks()" style="background:#444; color:#eee; border:none; padding:8px 15px; border-radius:6px; cursor:pointer; font-size:12px; margin-right:10px;">
+            🔄 重置异常任务
+        </button>
+<!-- 在 .container 内部，.add-panel 之前 -->
+<div class="add-panel" style="margin-bottom: 20px; background: #111; border-style: dashed;">
+    <div style="display:flex; gap:10px; width: 100%; grid-column: span 3;">
+        <input type="text" id="scrape-url" placeholder="粘贴视频网页地址 (如: https://www.example.com/video/123)" style="flex: 1;">
+        <button onclick="autoScrape()" id="scrape-btn" style="background: #9b59b6; width: 150px;">🔍 一键获取信息</button>
+    </div>
+    <div style="grid-column: span 3; font-size: 11px; color: #555;">
+        * 支持自动解析网页标题、封面图以及隐藏的 M3U8 地址。抓取成功后会自动填充下方表单。
+    </div>
+</div>
+
+<!-- 下方的 add-panel 保持不变，但我们可以给它加个 loading 遮罩 -->
+    <!-- 添加任务 -->
+    <div class="add-panel">
+        <div style="display:flex; flex-direction:column; gap:10px;">
+            <input type="text" id="task-name" placeholder="视频名称 (用于保存文件名)">
+            <input type="text" id="task-url" placeholder="M3U8 地址 (粘贴至此)">
+        </div>
+        <div id="paste-zone">
+            <span id="paste-hint" style="font-size:12px; color:#555;">点击后 CTRL+V 粘贴封面</span>
+            <img id="img-preview" style="display:none;">
+        </div>
+        <div style="font-size:12px; color:#666; display:flex; align-items:center;">
+            1. 粘贴链接和图片<br>2. 点击添加任务<br>3. 点击右下角绿色按钮开始批量下载
+        </div>
+        <button class="btn-add" onclick="addTask()">+ 添加到待下载列表</button>
+    </div>
+
+    <div id="task-grid" class="task-grid"></div>
+</div>
+
+<button class="start-floating-btn" onclick="startBatchDownload()">启动<br>下载</button>
+
+<script>
+    const API = 'http://localhost:3000';
+    let currentPastedImg = null;
+
+    // --- 1. 粘贴封面逻辑 ---
+    document.getElementById('paste-zone').onclick = () => document.getElementById('paste-zone').classList.add('active');
+    window.addEventListener('paste', e => {
+        const item = e.clipboardData.items[0];
+        if (item && item.type.indexOf('image') !== -1) {
+            const reader = new FileReader();
+            reader.onload = event => {
+                currentPastedImg = event.target.result;
+                document.getElementById('img-preview').src = currentPastedImg;
+                document.getElementById('img-preview').style.display = 'block';
+                document.getElementById('paste-hint').style.display = 'none';
+            };
+            reader.readAsDataURL(item.getAsFile());
+        }
+    });
+
+    // --- 2. 加载任务 ---
+    async function loadTasks() {
+        const res = await fetch(`${API}/api/download/tasks`).then(r => r.json());
+        const grid = document.getElementById('task-grid');
+        grid.innerHTML = '';
+        
+        res.data.forEach(t => {
+            const card = document.createElement('div');
+            card.className = `task-card status-${t.status}`;
+            const statusNames = ["等待中", "下载中...", "已入库"];
+         card.innerHTML = `
+    <span class="status-badge badge-${t.status}">${statusNames[t.status]}</span>
+    <img src="${t.cover || 'https://via.placeholder.com/300x169?text=No+Cover'}">
+    <div class="task-info">
+        <div class="task-name">${t.name}</div>
+        <div class="task-url" title="${t.url}">${t.url}</div>
+        <div style="font-size:10px; color:#444; margin-top:5px;">添加日期: ${t.add_date}</div>
+    </div>
+    <div class="card-actions">
+        <!-- 如果是下载中或已完成，显示重试按钮 -->
+        ${t.status !== 0 ? `<button style="background:#555" onclick="retryTask(${t.id})">重试</button>` : ''}
+        
+        <!-- 如果不是已完成，显示完成按钮 -->
+        ${t.status !== 2 ? `<button style="background:var(--green)" onclick="markComplete(${t.id})">完成</button>` : ''}
+        
+        <button style="background:#e74c3c" onclick="deleteTask(${t.id})">删除</button>
+    </div>
+`;
+            grid.appendChild(card);
+        });
+    }
+    async function autoScrape() {
+    const url = document.getElementById('scrape-url').value.trim();
+    const scrapeBtn = document.getElementById('scrape-btn');
+    
+    if (!url) return alert("请先粘贴网址");
+
+    scrapeBtn.disabled = true;
+    scrapeBtn.innerText = "正在分析中...";
+    
+    try {
+        const response = await fetch(`${API}/api/scrape`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ targetUrl: url })
+        });
+        
+        const res = await response.json();
+
+        // 无论全成功还是半成功，只要有数据就填充，方便用户手动补全
+        if (res.data) {
+            if (res.data.name) document.getElementById('task-name').value = res.data.name;
+            if (res.data.url) document.getElementById('task-url').value = res.data.url;
+            if (res.data.cover) {
+                // 如果抓取到的是远程图片 URL，我们预览它
+                const imgPreview = document.getElementById('img-preview');
+                const pasteHint = document.getElementById('paste-hint');
+                
+                imgPreview.src = res.data.cover;
+                imgPreview.style.display = 'block';
+                pasteHint.style.display = 'none';
+                
+                // 将远程图 URL 存入全局变量，准备保存
+                currentPastedImg = res.data.cover; 
+            }
+        }
+
+        if (res.success) {
+            alert("抓取成功！请检查信息并点击下方‘添加到待下载列表’。");
+        } else {
+            alert("提醒：" + res.message);
+        }
+
+    } catch (e) {
+        alert("抓取请求失败，请确保后端已安装 Puppeteer 并且网络通畅。");
+    } finally {
+        scrapeBtn.disabled = false;
+        scrapeBtn.innerText = "🔍 一键获取信息";
+    }
+}
+/**
+ * 一键重置所有卡在“下载中”状态的任务
+ */
+async function resetAllTasks() {
+    if(!confirm("是否将所有“下载中”的任务恢复为“等待中”？\n这通常用于下载器意外关闭后的修复。")) return;
+    
+    const res = await fetch(`${API}/api/download/tasks/reset-all`, { method: 'POST' }).then(r => r.json());
+    alert(res.message);
+    loadTasks();
+}
+// 每 5 秒钟自动刷新一次任务列表
+let autoRefreshTimer = setInterval(loadTasks, 5000);
+
+// 当页面不可见（换到别的标签页）时停止刷新，节省性能
+document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+        clearInterval(autoRefreshTimer);
+    } else {
+        autoRefreshTimer = setInterval(loadTasks, 5000);
+        loadTasks();
+    }
+});
+
+/**
+ * 重置单个任务
+ */
+async function retryTask(id) {
+    await fetch(`${API}/api/download/tasks/${id}/reset`, { method: 'PUT' });
+    loadTasks();
+}
+
+    // --- 3. 操作逻辑 ---
+async function addTask() {
+    const name = document.getElementById('task-name').value.trim();
+    const url = document.getElementById('task-url').value.trim();
+    const saveBtn = document.querySelector('.btn-add'); // 获取按钮防止连击
+
+    if(!name || !url) return alert("名称和网址必填");
+    
+    // 防止重复点击
+    if(saveBtn.disabled) return;
+    saveBtn.disabled = true;
+    saveBtn.innerText = "正在核对并添加...";
+
+    try {
+        const response = await fetch(`${API}/api/download/tasks`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ name, url, cover: currentPastedImg })
+        });
+        
+        const res = await response.json();
+
+        if (res.success) {
+            // 成功：清空输入
+            document.getElementById('task-name').value = '';
+            document.getElementById('task-url').value = '';
+            document.getElementById('img-preview').style.display = 'none';
+            document.getElementById('paste-hint').style.display = 'block';
+            currentPastedImg = null;
+            loadTasks();
+        } else {
+            // 失败：显示具体原因（重复网址、库内已有等）
+            alert("添加失败：" + res.message);
+        }
+    } catch (e) {
+        alert("网络请求失败");
+    } finally {
+        saveBtn.disabled = false;
+        saveBtn.innerText = "+ 添加到待下载列表";
+    }
+}
+
+    async function startBatchDownload() {
+        if(!confirm("确定要提取所有【等待中】的任务并启动 5060 显卡全速下载吗？")) return;
+        const res = await fetch(`${API}/api/download/start-batch`, { method: 'POST' }).then(r => r.json());
+        alert(res.message);
+        loadTasks();
+    }
+
+    async function markComplete(id) {
+        await fetch(`${API}/api/download/tasks/${id}/complete`, { method: 'PUT' });
+        loadTasks();
+    }
+
+    async function deleteTask(id) {
+        if(!confirm("确定删除此记录？")) return;
+        await fetch(`${API}/api/download/tasks/${id}`, { method: 'DELETE' });
+        loadTasks();
+    }
+
+    window.onload = loadTasks;
+</script>
+</body>
+</html>

@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>欲望清单 - 资源追踪</title>
+    <style>
+        :root { --bg: #0f0f0f; --panel: #1a1a1a; --accent: #f39c12; --text: #eee; --done: #2ecc71; }
+        body { font-family: 'PingFang SC', sans-serif; background: var(--bg); color: var(--text); padding: 30px; margin: 0; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+        .back-btn { text-decoration: none; color: #aaa; background: #333; padding: 8px 15px; border-radius: 6px; font-size: 14px; }
+
+        /* 输入面板 */
+        .add-panel { background: var(--panel); padding: 20px; border-radius: 12px; border: 1px solid #333; margin-bottom: 30px; display: grid; grid-template-columns: 1fr 1fr 2fr; gap: 15px; }
+        .add-panel input, .add-panel select { padding: 10px; background: #252525; border: 1px solid #444; color: #fff; border-radius: 6px; }
+        .add-btn { grid-column: span 3; padding: 12px; background: var(--accent); border: none; color: white; border-radius: 6px; font-weight: bold; cursor: pointer; }
+
+        /* 列表显示 */
+        .wanted-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
+        .wanted-card { background: var(--panel); border-radius: 10px; border: 1px solid #333; padding: 15px; position: relative; transition: 0.3s; }
+        .wanted-card.is-done { opacity: 0.5; border-color: var(--done); }
+        .wanted-card.is-done::after { content: "已入库"; position: absolute; top: 10px; right: 10px; color: var(--done); font-size: 10px; border: 1px solid var(--done); padding: 2px 4px; border-radius: 3px; }
+
+        .actor-title { font-size: 18px; font-weight: bold; color: var(--accent); margin-bottom: 5px; }
+        .race-tag { font-size: 11px; background: #333; padding: 2px 6px; border-radius: 4px; color: #888; }
+        .url-link { display: block; margin: 10px 0; color: #3498db; text-decoration: none; font-size: 13px; word-break: break-all; }
+        .url-link:hover { text-decoration: underline; }
+        .note-text { font-size: 12px; color: #666; font-style: italic; }
+        
+        .card-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 15px; }
+        .action-btn { font-size: 12px; padding: 5px 10px; border-radius: 4px; border: none; cursor: pointer; color: white; }
+        .done-btn { background: var(--done); }
+        .del-btn { background: #e74c3c; }
+        /* 添加面板网格微调 */
+.add-panel {
+    grid-template-columns: 1fr 1fr 1fr; /* 保持三列 */
+}
+
+/* 欲望清单卡片加入图片样式 */
+.wanted-card img.entry-img {
+    width: 100%;
+    aspect-ratio: 16/9;
+    object-fit: cover;
+    border-radius: 6px;
+    margin-bottom: 10px;
+    background: #000;
+    cursor: pointer;
+}
+
+#paste-zone.active { border-color: var(--accent); background: #1a1a1a; }
+/* 正在补图的卡片高亮 */
+.wanted-card.waiting-paste {
+    border: 2px solid var(--accent);
+    box-shadow: 0 0 15px var(--accent);
+    transform: scale(1.02);
+}
+.waiting-hint {
+    display: none;
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: bold;
+    text-align: center;
+    margin-bottom: 10px;
+}
+.waiting-paste .waiting-hint {
+    display: block;
+}
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h1>📑 资源待办清单</h1>
+        <a href="index.html" class="back-btn">← 返回主页</a>
+    </div>
+
+    <!-- 添加表单 -->
+  <!-- 修改后的 add-panel -->
+<div class="add-panel">
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+        <input type="text" id="actor-name" placeholder="演员名字">
+        <select id="race-name">
+            <option value="日韩">日韩</option>
+            <option value="欧美">欧美</option>
+            <option value="国产">国产</option>
+        </select>
+        <input type="text" id="target-url" placeholder="网址">
+    </div>
+
+    <!-- 【新增】截图预览区域 -->
+    <div id="paste-zone" style="border: 2px dashed #444; border-radius: 8px; display: flex; align-items: center; justify-content: center; background: #111; position: relative; overflow: hidden;">
+        <span id="paste-hint" style="color: #555; font-size: 12px; text-align: center; padding: 10px;">
+            点击此处后<br>CTRL+V 粘贴截图
+        </span>
+        <img id="img-preview" style="max-width: 100%; max-height: 100%; display: none; object-fit: contain;">
+        <button id="clear-img" onclick="clearPastedImg(event)" style="position:absolute; top:5px; right:5px; background: rgba(255,0,0,0.5); border:none; color:white; border-radius:3px; cursor:pointer; display:none;">X</button>
+    </div>
+
+    <input type="text" id="target-note" placeholder="备注 (例如：第几部作品、想要的原因)" style="grid-column: span 3;">
+    <button class="add-btn" onclick="addWanted()">添加到清单</button>
+</div>
+
+    <div id="wanted-grid" class="wanted-grid">
+        <!-- 动态渲染 -->
+    </div>
+</div>
+
+<script>
+    const API = 'http://localhost:3000';
+    let pastedImageBase64 = null; // 用于存储粘贴的图片数据
+    // --- 1. 监听粘贴事件 ---
+document.getElementById('paste-zone').addEventListener('click', () => {
+    // 点击区域后高亮，提示用户可以粘贴
+    document.getElementById('paste-zone').classList.add('active');
+});
+
+window.addEventListener('paste', async (e) => {
+    const items = e.clipboardData.items;
+    for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image') !== -1) {
+            const blob = items[i].getAsFile();
+            const reader = new FileReader();
+            
+            reader.onload = async (event) => {
+                const base64 = event.target.result;
+
+                // 判断逻辑：是补图还是新增？
+                if (updateTargetId) {
+                    // --- 情况 A：给已有数据补图 ---
+                    await uploadExistingImage(updateTargetId, base64);
+                    updateTargetId = null; // 处理完清空
+                } else {
+                    // --- 情况 B：新增数据时的预览 (原逻辑) ---
+                    pastedImageBase64 = base64;
+                    const img = document.getElementById('img-preview');
+                    img.src = base64;
+                    img.style.display = 'block';
+                    document.getElementById('paste-hint').style.display = 'none';
+                    document.getElementById('clear-img').style.display = 'block';
+                }
+            };
+            reader.readAsDataURL(blob);
+        }
+    }
+});
+
+function clearPastedImg(e) {
+    if(e) e.stopPropagation();
+    pastedImageBase64 = null;
+    document.getElementById('img-preview').style.display = 'none';
+    document.getElementById('paste-hint').style.display = 'block';
+    document.getElementById('clear-img').style.display = 'none';
+}
+
+ async function loadWantedList() {
+    const res = await fetch(`${API}/api/wanted`).then(r => r.json());
+    const grid = document.getElementById('wanted-grid');
+    grid.innerHTML = '';
+
+    res.data.forEach(item => {
+        const card = document.createElement('div');
+        card.className = `wanted-card ${item.status === 1 ? 'is-done' : ''}`;
+        
+        const imgHtml = item.image 
+            ? `<img src="${item.image}" class="entry-img" onclick="window.open(this.src)">` 
+            : `<div style="height:100px; background:#111; border-radius:6px; display:flex; align-items:center; justify-content:center; color:#333; margin-bottom:10px; font-size:12px;">暂无图片</div>`;
+
+        card.innerHTML = `
+            <div class="waiting-hint">请现在按下 CTRL+V 粘贴图片</div>
+            ${imgHtml}
+            <div class="actor-title">${item.actor_name} <span class="race-tag">${item.race_name}</span></div>
+            <a href="${item.url}" target="_blank" class="url-link">${item.url}</a>
+            <div class="note-text">${item.note || '无备注'}</div>
+            <div class="card-footer">
+                <!-- 增加补图按钮 -->
+                <button class="action-btn" style="background:#444" onclick="enterUpdateMode(${item.id}, this)">📸 补图</button>
+                ${item.status === 0 ? `<button class="action-btn done-btn" onclick="markDone(${item.id})">标记已下</button>` : ''}
+                <button class="action-btn del-btn" onclick="deleteItem(${item.id})">删除</button>
+            </div>
+        `;
+        grid.appendChild(card);
+    });
+}
+
+   async function addWanted() {
+    const payload = {
+        actor_name: document.getElementById('actor-name').value,
+        race_name: document.getElementById('race-name').value,
+        url: document.getElementById('target-url').value,
+        note: document.getElementById('target-note').value,
+        image: pastedImageBase64 // 【新增数据】
+    };
+
+    if(!payload.actor_name || !payload.url) return alert("名字和网址必填");
+
+    await fetch(`${API}/api/wanted`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+    });
+
+    // 清空输入和图片
+    document.getElementById('actor-name').value = '';
+    document.getElementById('target-url').value = '';
+    document.getElementById('target-note').value = '';
+    clearPastedImg();
+    loadWantedList();
+}
+    
+
+    async function markDone(id) {
+        await fetch(`${API}/api/wanted/${id}`, { method: 'PUT' });
+        loadWantedList();
+    }
+
+    async function deleteItem(id) {
+        if(!confirm("确定从清单删除？")) return;
+        await fetch(`${API}/api/wanted/${id}`, { method: 'DELETE' });
+        loadWantedList();
+    }
+    // --- 2. 新增：将图片发送给后端更新 ---
+async function uploadExistingImage(id, base64) {
+    try {
+        const res = await fetch(`${API}/api/wanted/${id}/image`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: base64 })
+        }).then(r => r.json());
+
+        if (res.success) {
+            console.log("图片更新成功");
+            loadWantedList(); // 重新加载列表
+        }
+    } catch (e) {
+        alert("补图失败");
+    }
+}
+
+// --- 3. 新增：点击按钮进入“补图模式” ---
+function enterUpdateMode(id, btnElement) {
+    // 先取消其他卡片的等待状态
+    document.querySelectorAll('.wanted-card').forEach(c => c.classList.remove('waiting-paste'));
+    
+    // 给当前卡片加高亮
+    const card = btnElement.closest('.wanted-card');
+    card.classList.add('waiting-paste');
+    
+    updateTargetId = id;
+    console.log("请按下 CTRL+V 为 ID:" + id + " 粘贴图片");
+}
+
+    window.onload = loadWantedList;
+</script>
+</body>
+</html>

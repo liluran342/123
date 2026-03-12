@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>批量视频管理 - 视频标记系统</title>
+    <style>
+        :root { 
+            --bg: #0f0f0f; 
+            --panel: #1a1a1a; 
+            --accent: #3498db; 
+            --text: #eee; 
+            --green: #2ecc71;
+            --danger: #e74c3c;
+        }
+
+        body { 
+            font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif; 
+            background: var(--bg); 
+            color: var(--text); 
+            padding: 20px; 
+            margin: 0; 
+        }
+
+        .container { max-width: 1300px; margin: 0 auto; }
+
+        /* 顶部导航 */
+        .header { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            margin-bottom: 20px; 
+        }
+        .nav-links a { 
+            text-decoration: none; 
+            color: #aaa; 
+            background: #333; 
+            padding: 8px 16px; 
+            border-radius: 6px; 
+            font-size: 14px; 
+            margin-left: 10px; 
+            transition: 0.3s;
+        }
+        .nav-links a:hover { background: var(--accent); color: #fff; }
+
+        /* 批量操作工具栏 */
+        .sticky-bar { 
+            position: sticky; 
+            top: 0; 
+            background: var(--panel); 
+            padding: 20px; 
+            border-radius: 10px; 
+            border: 1px solid #333; 
+            z-index: 100; 
+            margin-bottom: 20px; 
+            display: flex; 
+            gap: 15px; 
+            align-items: flex-end;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+
+        .filter-group { display: flex; flex-direction: column; gap: 5px; flex: 1; }
+        label { font-size: 11px; color: #777; font-weight: bold; }
+        
+        select { 
+            padding: 10px; 
+            background: #252525; 
+            border: 1px solid #444; 
+            color: #fff; 
+            border-radius: 6px; 
+            outline: none;
+        }
+        select:focus { border-color: var(--accent); }
+
+        .apply-btn { 
+            padding: 10px 25px; 
+            background: var(--accent); 
+            border: none; 
+            color: #fff; 
+            border-radius: 6px; 
+            cursor: pointer; 
+            font-weight: bold; 
+            height: 40px;
+            transition: 0.3s;
+        }
+        .apply-btn:hover { filter: brightness(1.2); }
+        
+        /* “只看最新”按钮样式 */
+        .btn-latest {
+            background: #333;
+            border: 1px solid #444;
+            color: #888;
+            padding: 10px 15px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            height: 40px;
+        }
+        .btn-latest.active {
+            background: var(--green);
+            color: #fff;
+            border-color: var(--green);
+        }
+
+        /* 表格样式 */
+        table { width: 100%; border-collapse: collapse; background: var(--panel); border-radius: 10px; overflow: hidden; }
+        th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #252525; }
+        th { background: #222; color: var(--accent); font-size: 13px; text-transform: uppercase; }
+        tr:hover { background: #222; }
+        table {
+    table-layout: fixed; 
+    width: 100%;
+}
+
+/* 2. 为各列定义合理的宽度（根据你的列数调整） */
+th:nth-child(1) { width: 50px; }  /* 勾选框 */
+th:nth-child(2) { width: 140px; } /* 预览图 */
+th:nth-child(3) { width: auto; }  /* 视频名称 - 剩下的空间都给它 */
+th:nth-child(4) { width: 120px; } /* 加入日期 */
+th:nth-child(5) { width: 180px; } /* 当前归属 */
+th:nth-child(6) { width: 80px; }  /* 格式 */
+
+/* 3. 核心：处理文字溢出显示省略号 */
+
+
+        .checkbox-col { width: 40px; text-align: center; }
+        input[type="checkbox"] { transform: scale(1.3); cursor: pointer; }
+
+        /* 预览图 */
+        .batch-thumb { 
+            width: 120px; 
+            aspect-ratio: 16/9; 
+            background: #000; 
+            border-radius: 4px; 
+            object-fit: cover; 
+            border: 1px solid #333;
+            display: block;
+        }
+/* 优化后的省略号容器 */
+.text-ellipsis {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: block;
+    width: 100%;
+    padding: 4px 0; /* 重点：给上下留出空间 */
+    line-height: normal; /* 恢复正常行高 */
+}
+
+/* 优化后的标签样式 */
+.status-tag {
+    display: inline-block;
+    vertical-align: middle;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    background: #333;
+    color: #888;
+    /* 确保边框不会被切掉 */
+    border: 1px solid transparent; 
+}
+
+.status-tag.has-data {
+    background: rgba(46, 204, 113, 0.2);
+    color: var(--green);
+    border: 1px solid var(--green);
+}
+/* 确保 active 状态足够醒目 */
+.btn-latest.active {
+    background: var(--green); /* 建议设为绿色或蓝色 */
+    color: #fff;
+    border-color: var(--green);
+}
+      
+
+        .date-text { font-size: 12px; color: #666; font-family: monospace; }
+        .file-type { font-size: 10px; color: #444; background: #111; padding: 2px 4px; border-radius: 3px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h1>📦 批量视频管理</h1>
+        <div class="nav-links">
+            <a href="index.html">返回播放器</a>
+            <a href="config.html">配置管理</a>
+            <a href="multi-select.html">多路筛选</a>
+        </div>
+    </div>
+
+    <!-- 批量工具栏 -->
+    <div class="sticky-bar">
+        <div class="checkbox-col" style="display: flex; flex-direction: column; align-items: center; gap: 5px;">
+            <label>全选</label>
+            <input type="checkbox" id="select-all-box" onclick="toggleAllCheckboxes(this)">
+        </div>
+        
+        <!-- 过滤器 -->
+        <button id="btn-latest-toggle" class="btn-latest" onclick="toggleLatestFilter()">
+            🆕 只要最新 (3天内)
+        </button>
+         <button id="btn-unmarked-toggle" class="btn-latest" onclick="toggleUnmarkedFilter()">
+        ❓ 未归属
+    </button>
+
+        <div class="filter-group">
+            <label>1. 设置人种 (Race)</label>
+            <select id="race-select" onchange="onRaceChange()"></select>
+        </div>
+        
+        <div class="filter-group">
+            <label>2. 设置演员 (Actor)</label>
+            <select id="actor-select"></select>
+        </div>
+
+        <button class="apply-btn" onclick="applyBatchUpdate()">应用到选中项</button>
+        <button class="apply-btn" style="background: #f39c12;" onclick="batchConvert()">
+    ⚡ 5060 批量转码 (仅限 AVI)
+</button>
+
+<button class="btn-latest" onclick="selectOnlyAVI()">
+    🎯 勾选所有 AVI
+</button>
+    </div>
+
+    <!-- 视频列表 -->
+    <table>
+        <thead>
+            <tr>
+                <th class="checkbox-col">选</th>
+                <th>预览图</th>
+                <th>视频名称</th>
+                <th>加入日期</th>
+                <th>当前归属 (人种 / 演员)</th>
+                <th>格式</th>
+            </tr>
+        </thead>
+        <tbody id="video-table-body">
+            <tr><td colspan="6" style="text-align:center; padding:50px; color:#555;">数据加载中...</td></tr>
+        </tbody>
+    </table>
+</div>
+
+<script>
+    const API = 'http://localhost:3000';
+    let globalConfig = { races: [], actors: [] };
+    let videoCovers = {};
+    let isLatestOnly = false;
+    let isUnmarkedOnly = false; // 【新增】未归属筛选状态
+
+    // 初始化
+    window.onload = async () => {
+        await loadConfig();
+        await loadCovers();
+        await loadVideos();
+    };
+
+    // 1. 加载配置字典
+    async function loadConfig() {
+        const res = await fetch(`${API}/api/config`).then(r => r.json());
+        globalConfig = res;
+        const raceSel = document.getElementById('race-select');
+        raceSel.innerHTML = '<option value="">-- 选择人种 --</option>';
+        res.races.forEach(r => raceSel.innerHTML += `<option value="${r.name}">${r.name}</option>`);
+    }
+    // 【新增】切换未归属状态函数
+function toggleUnmarkedFilter() {
+    isUnmarkedOnly = !isUnmarkedOnly;
+    const btn = document.getElementById('btn-unmarked-toggle');
+    btn.classList.toggle('active', isUnmarkedOnly);
+    loadVideos(); // 重新渲染
+}
+
+    // 联动逻辑
+    function onRaceChange() {
+        const race = document.getElementById('race-select').value;
+        const actorSel = document.getElementById('actor-select');
+        actorSel.innerHTML = '<option value="">-- 选择演员 --</option>';
+        if (race) {
+            globalConfig.actors.filter(a => a.race_name === race).forEach(a => {
+                actorSel.innerHTML += `<option value="${a.name}">${a.name}</option>`;
+            });
+        }
+    }
+
+    // 2. 加载封面图映射
+    async function loadCovers() {
+        const res = await fetch(`${API}/api/covers`).then(r => r.json());
+        res.data.forEach(c => videoCovers[c.video_path] = c.thumbnail);
+    }
+    /**
+ * 快捷操作：只勾选列表中的 AVI 文件
+ */
+function selectOnlyAVI() {
+    const checkboxes = document.querySelectorAll('.video-checkbox');
+    let count = 0;
+    checkboxes.forEach(cb => {
+        if (cb.value.toLowerCase().endsWith('.avi')) {
+            cb.checked = true;
+            count++;
+        } else {
+            cb.checked = false;
+        }
+    });
+    console.log(`已勾选 ${count} 个 AVI 文件`);
+}
+
+/**
+ * 批量提交转码请求
+ */
+async function batchConvert() {
+    const selectedPaths = Array.from(document.querySelectorAll('.video-checkbox:checked')).map(cb => cb.value);
+    const aviPaths = selectedPaths.filter(p => p.toLowerCase().endsWith('.avi'));
+
+    if (aviPaths.length === 0) {
+        return alert("请先勾选需要转码的 .avi 文件！");
+    }
+
+    if (!confirm(`确定要启动 5060 显卡为这 ${aviPaths.length} 个视频进行高速转码吗？\n生成的 MP4 将存放在相同目录下。`)) {
+        return;
+    }
+
+    try {
+        const res = await fetch(`${API}/api/batch-convert`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ video_paths: aviPaths })
+        }).then(r => r.json());
+
+        if (res.success) {
+            alert(res.message + "\n转码将在后台运行，你可以继续操作其他功能。");
+            // 取消所有勾选
+            document.querySelectorAll('.video-checkbox').forEach(cb => cb.checked = false);
+            document.getElementById('select-all-box').checked = false;
+        }
+    } catch (e) {
+        alert("请求转码失败，请检查服务器连接。");
+    }
+}
+
+    // 3. 加载视频列表并渲染
+    async function loadVideos() {
+        const tableBody = document.getElementById('video-table-body');
+        const vRes = await fetch(`${API}/api/videos`).then(r => r.json());
+        let list = vRes.data;
+
+        // 排序：按时间戳倒序（新片在前）
+        list.sort((a, b) => b.timestamp - a.timestamp);
+
+       list = list.filter(v => {
+        // 过滤条件 A: 只要最新 (3天内)
+        if (isLatestOnly) {
+            const threeDaysAgo = Date.now() - (3 * 24 * 60 * 60 * 1000);
+            if (v.timestamp <= threeDaysAgo) return false;
+        }
+
+        // 过滤条件 B: 【新增】只要未归属
+        if (isUnmarkedOnly) {
+            // 如果 race 或 actor 任何一个为空，则视为未归属
+            const hasAssignment = v.race && v.actor;
+            if (hasAssignment) return false;
+        }
+
+        return true;
+    });
+
+        tableBody.innerHTML = '';
+        if (list.length === 0) {
+            tableBody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:50px;">没有找到匹配的视频</td></tr>';
+            return;
+        }
+
+        list.forEach(v => {
+            const thumb = videoCovers[v.path] || '';
+            const tr = document.createElement('tr');
+            
+            // 状态判断：这里使用从 /api/videos 接口直接返回的 race/actor (取决于你后端的实现)
+            // 如果后端还没改接口，这里会显示 v.race || '未标记'
+            const hasData = v.race && v.actor;
+
+           tr.innerHTML = `
+    <td class="checkbox-col">
+        <input type="checkbox" class="video-checkbox" value="${v.path}">
+    </td>
+    <td>
+        <img src="${thumb}" class="batch-thumb" onerror="this.style.opacity='0.2'">
+    </td>
+    
+    <!-- 修改此单元格 -->
+    <td>
+        <div class="text-ellipsis" 
+             style="font-weight:bold; color:var(--accent);" 
+             title="${v.name}">
+             ${v.name}
+        </div>
+        <div class="text-ellipsis" 
+             style="font-size:10px; color:#444; margin-top:4px;" 
+             title="${v.relativeUrl}">
+             ${v.relativeUrl}
+        </div>
+    </td>
+
+    <td class="date-text">${v.dateAdded}</td>
+    <td>
+        ${hasData 
+            ? `<div class="text-ellipsis"><span class="status-tag has-data">${v.race} / ${v.actor}</span></div>` 
+            : '<span class="status-tag">未标记归属</span>'}
+    </td>
+    <td><span class="file-type">${v.type.toUpperCase()}</span></td>
+`;
+tableBody.appendChild(tr);
+        });
+    }
+
+    // --- 功能交互 ---
+
+    function toggleLatestFilter() {
+        isLatestOnly = !isLatestOnly;
+        document.getElementById('btn-latest-toggle').classList.toggle('active', isLatestOnly);
+        loadVideos();
+    }
+
+    function toggleAllCheckboxes(source) {
+        const checkboxes = document.querySelectorAll('.video-checkbox');
+        checkboxes.forEach(cb => cb.checked = source.checked);
+    }
+
+    async function applyBatchUpdate() {
+        const selectedPaths = Array.from(document.querySelectorAll('.video-checkbox:checked')).map(cb => cb.value);
+        const race = document.getElementById('race-select').value;
+        const actor = document.getElementById('actor-select').value;
+
+        if (selectedPaths.length === 0) return alert("请先勾选视频！");
+        if (!race || !actor) return alert("请选择要设置的人种和演员！");
+
+        if (!confirm(`确定将选中的 ${selectedPaths.length} 个视频归类到 [${race} - ${actor}] 吗？`)) return;
+
+        const res = await fetch(`${API}/api/batch-update`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ video_paths: selectedPaths, race, actor })
+        }).then(r => r.json());
+
+        if (res.success) {
+            alert(res.message);
+            // 操作成功后重新加载，刷新状态
+            loadVideos();
+        } else {
+            alert("更新失败: " + res.message);
+        }
+    }
+</script>
+
+</body>
+</html>

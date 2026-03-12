@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>片段筛选中心 - 三级联动版</title>
+    <style>
+        :root { --bg: #0f0f0f; --panel: #1a1a1a; --accent: #2ecc71; --text: #eee; }
+        body { font-family: 'PingFang SC', sans-serif; background: var(--bg); color: var(--text); padding: 20px; margin: 0; }
+        
+        /* 头部与筛选栏 */
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid #333; padding-bottom: 20px; }
+        .filter-bar { 
+            background: var(--panel); padding: 15px; border-radius: 8px; margin-bottom: 30px;
+            display: flex; gap: 15px; align-items: center; border: 1px solid #333;
+        }
+        .filter-group { display: flex; align-items: center; gap: 8px; }
+        label { font-size: 12px; color: #888; }
+        select { padding: 8px 12px; background: #252525; border: 1px solid #444; color: #fff; border-radius: 4px; outline: none; min-width: 120px; }
+        select:focus { border-color: var(--accent); }
+        
+        .reset-btn { background: #444; color: #eee; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; }
+        .play-btn { background: #e74c3c; color: white; padding: 10px 20px; border-radius: 5px; font-weight: bold; border: none; cursor: pointer; }
+
+        /* 内容区布局 */
+      .pose-section { 
+    margin-bottom: 35px; 
+    background: rgba(255,255,255,0.02); 
+    padding: 15px; 
+    border-radius: 12px;
+}
+        .pose-title { 
+    font-size: 18px; 
+    color: var(--accent); 
+    margin-bottom: 15px; 
+    border-left: 4px solid var(--accent); 
+    padding-left: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+      .grid { 
+    display: flex;           /* 改为 flex 布局 */
+    gap: 15px; 
+    overflow-x: auto;       /* 开启横向滚动 */
+    padding: 5px 5px 15px 5px; 
+    scrollbar-width: thin; 
+    scrollbar-color: var(--accent) #111;
+}
+/* 美化滚动条 (Chrome/Edge/Safari) */
+.grid::-webkit-scrollbar { height: 6px; }
+.grid::-webkit-scrollbar-track { background: #111; border-radius: 3px; }
+.grid::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+.grid::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+        
+       .card { 
+    flex: 0 0 220px;        /* 【关键】不伸缩，基准宽度 220px */
+    background: var(--panel); 
+    border-radius: 8px; 
+    overflow: hidden; 
+    cursor: pointer; 
+    position: relative; 
+    border: 2px solid transparent; 
+    transition: 0.2s; 
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+}
+    .card:hover { transform: translateY(-5px); background: #252525; }
+.card.selected { border-color: var(--accent); box-shadow: 0 0 15px rgba(46, 204, 113, 0.3); }
+
+.card img { width: 100%; aspect-ratio: 16/9; object-fit: cover; background: #000; }
+
+.card-info { padding: 10px; }
+.time-tag { color: var(--accent); font-weight: bold; font-size: 12px; }
+.actor-name { font-size: 12px; color: #eee; margin-top: 4px; }
+.video-file { font-size: 10px; color: #555; margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* 修改按钮 */
+.modify-btn {
+    position: absolute; top: 5px; right: 5px; 
+    background: rgba(52, 152, 219, 0.9); color: white; border: none;
+    padding: 3px 8px; border-radius: 4px; font-size: 10px; cursor: pointer; z-index: 10;
+}
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>🧬 片段分类筛选</h1>
+    <button onclick="openPlayer()" class="play-btn">打开片段同步播放墙</button>
+</div>
+
+<!-- 三级联动筛选栏 -->
+<div class="filter-bar">
+    <div class="filter-group">
+        <label>人种:</label>
+        <select id="race-filter" onchange="onRaceFilterChange()">
+            <option value="all">全部</option>
+        </select>
+    </div>
+    <div class="filter-group">
+        <label>演员:</label>
+        <select id="actor-filter" onchange="onActorFilterChange()">
+            <option value="all">全部</option>
+        </select>
+    </div>
+    <div class="filter-group">
+        <label>姿势:</label>
+        <select id="pose-filter" onchange="applyFilters()">
+            <option value="all">全部</option>
+        </select>
+    </div>
+    <button class="reset-btn" onclick="resetFilters()">重置</button>
+    <div style="margin-left: auto; color: #666; font-size: 12px;">
+        匹配片段: <span id="match-count" style="color:var(--accent)">0</span>
+    </div>
+</div>
+
+<div id="content">正在加载数据...</div>
+
+<script>
+    const API = 'http://localhost:3000';
+    const bc = new BroadcastChannel('segment_stream');
+    
+    let allMarkers = [];      // 存储所有原始标记数据
+    let globalConfig = {};    // 存储数据库字典配置
+    let selectedSegments = new Map();
+
+    async function init() {
+        try {
+            // 同时获取标记数据和配置字典
+            const [mRes, cRes] = await Promise.all([
+                fetch(`${API}/api/all-markers`).then(r => r.json()),
+                fetch(`${API}/api/config`).then(r => r.json())
+            ]);
+
+            allMarkers = mRes.data || [];
+            globalConfig = cRes;
+
+            // 1. 初始化人种下拉框
+            const raceSel = document.getElementById('race-filter');
+            globalConfig.races.forEach(r => {
+                raceSel.innerHTML += `<option value="${r.name}">${r.name}</option>`;
+            });
+
+            // 2. 执行初始渲染
+            applyFilters();
+        } catch (e) {
+            document.getElementById('content').innerText = "数据加载失败，请检查后端服务";
+        }
+    }
+
+    // --- 联动逻辑 ---
+
+    function onRaceFilterChange() {
+        const race = document.getElementById('race-filter').value;
+        const actorSel = document.getElementById('actor-filter');
+        const poseSel = document.getElementById('pose-filter');
+        
+        // 重置下级下拉框
+        actorSel.innerHTML = '<option value="all">全部</option>';
+        poseSel.innerHTML = '<option value="all">全部</option>';
+        
+        if (race !== 'all') {
+            globalConfig.actors.filter(a => a.race_name === race).forEach(a => {
+                actorSel.innerHTML += `<option value="${a.name}">${a.name}</option>`;
+            });
+        }
+        applyFilters();
+    }
+
+    function onActorFilterChange() {
+        const actor = document.getElementById('actor-filter').value;
+        const poseSel = document.getElementById('pose-filter');
+        
+        poseSel.innerHTML = '<option value="all">全部</option>';
+        
+        if (actor !== 'all') {
+            globalConfig.poses.filter(p => p.actor_name === actor).forEach(p => {
+                poseSel.innerHTML += `<option value="${p.name}">${p.name}</option>`;
+            });
+        }
+        applyFilters();
+    }
+
+    function resetFilters() {
+        document.getElementById('race-filter').value = 'all';
+        document.getElementById('actor-filter').innerHTML = '<option value="all">全部</option>';
+        document.getElementById('pose-filter').innerHTML = '<option value="all">全部</option>';
+        applyFilters();
+    }
+
+    // --- 核心筛选渲染逻辑 ---
+
+    function applyFilters() {
+        const race = document.getElementById('race-filter').value;
+        const actor = document.getElementById('actor-filter').value;
+        const pose = document.getElementById('pose-filter').value;
+
+        // 执行多重过滤
+        const filtered = allMarkers.filter(m => {
+            if (m.time === 0 && m.end_time === 0) return false; // 过滤掉占位数据
+            const matchRace = (race === 'all' || m.race === race);
+            const matchActor = (actor === 'all' || m.actor === actor);
+            const matchPose = (pose === 'all' || m.pose === pose);
+            return matchRace && matchActor && matchPose;
+        });
+
+        document.getElementById('match-count').innerText = filtered.length;
+        renderContent(filtered);
+    }
+
+    function renderContent(markers) {
+        const container = document.getElementById('content');
+        container.innerHTML = '';
+
+        if (markers.length === 0) {
+            container.innerHTML = '<div style="padding:100px; text-align:center; color:#444;">没有匹配的片段</div>';
+            return;
+        }
+
+        // 按姿势分组
+        const groups = markers.reduce((acc, m) => {
+            const p = m.pose || "未分类";
+            if (!acc[p]) acc[p] = [];
+            acc[p].push(m);
+            return acc;
+        }, {});
+
+        for (const pName in groups) {
+            const section = document.createElement('div');
+            section.className = 'pose-section';
+            
+            // 头部：显示姿势名和数量
+            section.innerHTML = `
+                <div class="pose-title">
+                    <span>${pName} <small style="color:#666; font-size:12px;">(${groups[pName].length})</small></span>
+                    <small style="color:#444; font-size:10px;">SHIFT + 滚轮滑动</small>
+                </div>
+            `;
+            
+            // 滑动容器
+            const grid = document.createElement('div');
+            grid.className = 'grid';
+            
+            groups[pName].forEach(m => {
+                const isSelected = selectedSegments.has(m.id);
+                const card = document.createElement('div');
+                card.className = `card ${isSelected ? 'selected' : ''}`;
+                card.id = `marker-${m.id}`;
+                
+                // 处理文件路径显示
+                const fileName = m.video_path.split('\\').pop();
+                const escapedPath = m.video_path.replace(/\\/g, '\\\\');
+
+                card.innerHTML = `
+                    <button class="modify-btn" onclick="jumpToModify(event, ${m.id})">修改</button>
+                    <img src="${m.thumbnail}" onerror="this.src='https://via.placeholder.com/200x112?text=无预览图'">
+                    <div class="card-info">
+                        <span class="time-tag">${formatTime(m.time)} - ${formatTime(m.end_time)}</span>
+                        <div class="actor-name">${m.actor} <small style="color:#666">(${m.race})</small></div>
+                        <div class="video-file" title="${fileName}">${fileName}</div>
+                    </div>
+                `;
+                
+                // 点击逻辑：排除修改按钮，触发多选
+                card.onclick = (e) => {
+                    if (e.target.tagName !== 'BUTTON') toggleSegment(m);
+                };
+                grid.appendChild(card);
+            });
+            
+            section.appendChild(grid);
+            container.appendChild(section);
+        }
+    }
+
+    // --- 交互逻辑 ---
+
+    function toggleSegment(m) {
+        const card = document.getElementById(`marker-${m.id}`);
+        if (selectedSegments.has(m.id)) {
+            selectedSegments.delete(m.id);
+            card.classList.remove('selected');
+            bc.postMessage({ type: 'REMOVE', id: m.id });
+        } else {
+            selectedSegments.set(m.id, m);
+            card.classList.add('selected');
+            sendAddMessage(m);
+        }
+    }
+
+    function sendAddMessage(m) {
+        bc.postMessage({ 
+            type: 'ADD', 
+            data: {
+                id: m.id,
+                url: `${API}/content/${m.relativeUrl}`,
+                start: m.time,
+                end: m.end_time,
+                type: m.type,
+                label: `[${m.pose}] ${m.actor}`
+            } 
+        });
+    }
+
+   function jumpToModify(event, segmentId) {
+    // 阻止事件冒泡，防止触发卡片的选中/取消逻辑
+    if (event) event.stopPropagation();
+    
+    if (!segmentId) {
+        console.error("ID 未定义");
+        return;
+    }
+
+    console.log("准备修改片段 ID:", segmentId);
+    
+    // 跳转到新的编辑页面，传递 id 参数
+    window.open(`edit.html?id=${segmentId}`, 'VideoEditWindow');
+}
+
+    function openPlayer() {
+        window.open('segment-player.html', 'SegmentPlayerWindow');
+    }
+
+    bc.onmessage = (e) => {
+        if (e.data.type === 'REQUEST_SYNC') {
+            selectedSegments.forEach(m => sendAddMessage(m));
+        }
+        if (e.data.type === 'SYNC_REMOVE') {
+            selectedSegments.delete(e.data.id);
+            const card = document.getElementById(`marker-${e.data.id}`);
+            if (card) card.classList.remove('selected');
+        }
+    };
+
+    function formatTime(s) {
+        const m = Math.floor(s / 60);
+        const sec = Math.floor(s % 60);
+        return `${m}:${sec.toString().padStart(2, '0')}`;
+    }
+
+    init();
+</script>
+</body>
+</html>

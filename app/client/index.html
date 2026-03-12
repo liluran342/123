@@ -1,0 +1,2270 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>视频标记管理系统 - 终极版</title>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <style>
+       :root { 
+    --bg: #0f0f0f; 
+    --panel: #1a1a1a; 
+    --accent: #3498db; 
+    --text: #efefef; 
+    /* 修改这一行：使用黄色 (241, 196, 15) 或者纯黄 (255, 255, 0) */
+    --segment: rgba(241, 196, 15, 0.6); 
+     --danger: #e74c3c;
+}
+        body { font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif; display: flex; margin: 0; height: 100vh; background: var(--bg); color: var(--text); overflow: hidden; }
+        
+        /* 侧边栏 */
+        #sidebar { width: 360px; border-right: 1px solid #333; background: var(--panel); display: flex; flex-direction: column; }
+        .sidebar-header { padding: 15px; border-bottom: 1px solid #333; }
+        .nav-links { display: flex; gap: 10px; margin-top: 10px; }
+        .nav-links a { flex: 1; text-align: center; font-size: 12px; padding: 6px; background: #333; color: #bbb; text-decoration: none; border-radius: 4px; }
+        .nav-links a:hover { background: var(--accent); color: #fff; }
+
+        #v-list { flex: 1; overflow-y: auto; }
+        .v-item { display: flex; padding: 10px; border-bottom: 1px solid #252525; cursor: pointer; gap: 12px; align-items: center; }
+        .v-item:hover { background: #252525; }
+        .v-item.active { background: #2c3e50; border-left: 4px solid var(--accent); }
+        .v-thumb { width: 120px; aspect-ratio: 16/9; background: #000; border-radius: 4px; object-fit: cover; border: 1px solid #444; flex-shrink: 0; }
+        .v-meta { flex: 1; min-width: 0; }
+        .v-name { font-size: 13px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; margin-bottom: 4px; }
+        .v-tag { font-size: 10px; color: #777; background: #111; padding: 2px 5px; border-radius: 3px; }
+
+        /* 主界面 */
+        #main { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; }
+.player-container {
+    position: relative;
+    width: 100%;
+    max-width: 900px;
+    background: #000;
+    border-radius: 12px;
+    /* 【必须】overflow 设为 visible，否则上方的预览框会被切掉 */
+    overflow: visible !important; 
+}
+#toggle-jump-btn {
+    transition: all 0.3s ease;
+    min-width: 90px;
+}
+#toggle-jump-btn:hover {
+    filter: brightness(1.2);
+}
+        video { width: 100%; display: block; aspect-ratio: 16/9; cursor: pointer; }
+
+        /* 自定义控制条 */
+        .controls { background: #222; padding: 12px 15px; }
+        .progress-wrapper { position: relative; height: 16px; background: #444; cursor: pointer; border-radius: 8px; margin-bottom: 10px; }
+        .progress-fill { height: 100%; background: var(--accent); width: 0%; border-radius: 8px; position: relative; z-index: 2; transition: width 0.1s linear; }
+        .segments-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+        .marker-segment {
+    position: absolute;
+    height: 100%;
+    background: rgba(241, 196, 15, 0.6); /* 黄色 */
+    border-left: 1px solid #fff;
+    border-right: 1px solid #fff;
+    z-index: 5;
+    cursor: pointer;
+    pointer-events: auto; /* 必须开启，否则无法触发 mouseenter */
+}
+
+        .btn-group-row { display: flex; justify-content: space-between; align-items: center; }
+        .play-pause { background: var(--accent); border: none; color: white; padding: 6px 16px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .cover-btn { background: #444; color: #ddd; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+        .cover-btn:hover { background: #555; color: #fff; }
+
+        /* 标记面板 */
+        .panel { background: var(--panel); padding: 20px; border-radius: 12px; border: 1px solid #333; max-width: 900px; box-sizing: border-box; }
+        .time-capture { display: flex; gap: 10px; align-items: center; background: #252525; padding: 12px; border-radius: 8px; margin-bottom: 15px; }
+        .capture-val { flex: 1; font-family: monospace; font-size: 16px; color: var(--accent); }
+        .select-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 15px; }
+        select, input { width: 100%; padding: 10px; background: #252525; color: #fff; border: 1px solid #444; border-radius: 6px; }
+        .save-btn { width: 100%; padding: 15px; background: var(--accent); color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 16px; }
+
+        /* 结果展示 */
+        #marker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px; }
+        .card { background: var(--panel); border-radius: 8px; border: 1px solid #333; overflow: hidden; position: relative; }
+        .card img { width: 100%; aspect-ratio: 16/9; object-fit: cover; cursor: pointer; }
+        .card-body { padding: 10px; }
+        .card-time { color: var(--accent); font-size: 12px; font-weight: bold; margin-bottom: 5px; }
+        .pill-box { display: flex; flex-wrap: wrap; gap: 4px; }
+        .pill { font-size: 10px; padding: 2px 6px; border-radius: 4px; background: #333; color: #aaa; }
+        .del-mark {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    background: #e74c3c; /* 使用实色测试更明显 */
+    border: none;
+    color: white;
+    padding: 4px 8px;   /* 稍微加大一点方便找 */
+    border-radius: 4px;
+    font-size: 10px;
+    cursor: pointer;
+    z-index: 99;        /* 强制置顶 */
+    display: block !important; /* 确保没有被其他规则 hidden */
+}
+        .edit-mark {
+    position: absolute;
+    top: 5px;
+    right: 45px; /* 放在删除按钮左边，避免重叠 */
+    background: rgba(52, 152, 219, 0.9);
+    color: white;
+    border: none;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    cursor: pointer;
+    z-index: 10;
+}
+.edit-mark:hover { background: #2980b9; }
+/* 自定义姿势预览滚动条样式 */
+#pose-preview-thumbs::-webkit-scrollbar {
+    height: 6px;
+}
+#pose-preview-thumbs::-webkit-scrollbar-track {
+    background: #111;
+    border-radius: 3px;
+}
+#pose-preview-thumbs::-webkit-scrollbar-thumb {
+    background: #444;
+    border-radius: 3px;
+}
+#pose-preview-thumbs::-webkit-scrollbar-thumb:hover {
+    background: var(--accent);
+}
+
+/* 预览图的基础样式 */
+#pose-preview-thumbs img {
+    height: 80px; /* 固定高度 */
+    aspect-ratio: 16/9;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid #333;
+    flex-shrink: 0; /* 禁止图片被压缩 */
+    cursor: pointer;
+    transition: transform 0.2s, border-color 0.2s;
+}
+
+#pose-preview-thumbs img:hover {
+    transform: scale(1.05);
+    border-color: var(--accent);
+}
+/* 让 select-row 里的 input 样式更统一 */
+.select-row input[type="text"] {
+    width: 100%;
+    padding: 8px;
+    background: #111;
+    border: 1px solid #444;
+    color: #00ff88; /* 快捷输入使用醒目颜色区分 */
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+/* 专注模式下的样式控制 */
+body.focus-mode #sidebar {
+    display: none; /* 隐藏侧边栏 */
+}
+
+body.focus-mode #main {
+    padding: 0; /* 移除主区域边距 */
+    background: #000; /* 背景全黑 */
+}
+
+body.focus-mode .player-container {
+    max-width: 100vw; /* 视频容器宽度占满 */
+    border-radius: 0; /* 移除圆角 */
+}
+
+body.focus-mode video {
+    max-height: 85vh; /* 视频最高占屏幕的 85% */
+}
+
+body.focus-mode .panel, 
+body.focus-mode h2, 
+body.focus-mode h3, 
+body.focus-mode #marker-grid {
+    display: none !important; /* 隐藏标记面板、标题和列表 */
+}
+
+/* 专注模式下的控制条：悬浮在底部或保持显示 */
+body.focus-mode .controls {
+    background: rgba(20, 20, 20, 0.9);
+    padding: 15px 50px;
+}
+
+/* 专注模式按钮样式 */
+.focus-btn {
+    background: #444;
+    color: #eee;
+    border: 1px solid #666;
+    padding: 5px 15px;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-left: 10px;
+    font-size: 12px;
+}
+.focus-btn.active {
+    background: #f1c40f;
+    color: #000;
+    border-color: #f1c40f;
+    font-weight: bold;
+}
+
+/* 调整保存按钮 */
+.save-btn {
+    background: var(--accent);
+    transition: all 0.2s;
+    border: none;
+    border-radius: 6px;
+    color: white;
+    cursor: pointer;
+}
+/* 锁定状态的侧边栏项目 */
+.v-item.is-locked {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.v-item.is-locked .v-thumb {
+    filter: grayscale(1) blur(3px); /* 灰度并模糊封面 */
+}
+
+/* 锁定图标遮罩 */
+.lock-overlay {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.4);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: #f1c40f;
+    font-size: 10px;
+    font-weight: bold;
+}
+.lock-icon {
+    font-size: 20px;
+    margin-bottom: 4px;
+}
+
+.save-btn:hover {
+    filter: brightness(1.2);
+    box-shadow: 0 0 15px rgba(52, 152, 219, 0.4);
+}
+/* 快进后退按钮样式 */
+.skip-btn {
+    background: #2a2a2a;
+    border: 1px solid #444;
+    color: #aaa;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    transition: 0.2s;
+}
+
+.skip-btn:hover {
+    background: #444;
+    color: #fff;
+    border-color: var(--accent);
+}
+.duration-label {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 1px 5px;
+    border-radius: 4px;
+    color: var(--accent); /* 使用你定义的主题蓝 */
+    font-size: 10px;
+    margin-left: 8px;
+    border: 1px solid rgba(52, 152, 219, 0.3);
+}
+
+/* 稍微缩小播放按钮宽度以适应新按钮 */
+.play-pause {
+    min-width: 60px;
+}
+/* 进度条上的预览浮窗 */
+#progress-preview {
+    position: absolute;
+    /* 【修改】增加到底部的距离，拉开约 2-3 厘米 */
+    bottom: 110px; 
+    left: 0;
+    display: none;
+    background: #1a1a1a;
+    /* 使用 var(--accent) 边框，确保颜色醒目 */
+    border: 2px solid var(--accent); 
+    border-radius: 8px;
+    padding: 5px;
+    /* 提升层级，确保在视频和控制栏之上 */
+    z-index: 2000; 
+    pointer-events: none;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+    text-align: center;
+    /* 【关键】配合 JS 的 left 百分比实现水平居中 */
+    transform: translateX(-50%); 
+}
+#progress-preview::after {
+    content: "";
+    position: absolute;
+    /* 定位在预览框底部 */
+    bottom: -14px; 
+    left: 50%;
+    transform: translateX(-50%);
+    /* 画三角形：上边框有颜色，左右透明 */
+    border-left: 10px solid transparent;
+    border-right: 10px solid transparent;
+    border-top: 14px solid var(--accent); /* 颜色与边框一致 */
+    filter: drop-shadow(0 2px 2px rgba(0,0,0,0.5));
+}
+#progress-preview img {
+    width: 180px; /* 稍微加大一点，看得更清楚 */
+    aspect-ratio: 16/9;
+    object-fit: cover;
+    display: block;
+    border-radius: 4px;
+    background: #000;
+}
+
+#progress-preview .info {
+    font-size: 12px;
+    color: #fff;
+    margin-top: 6px;
+    font-weight: bold;
+    /* 限制文字宽度防止撑破 */
+    max-width: 180px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+/* 倍速按钮基础样式 */
+.speed-btn {
+    background: transparent;
+    border: none;
+    color: #666;
+    padding: 2px 6px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 10px;
+    font-weight: bold;
+    transition: 0.2s;
+}
+
+.speed-btn:hover {
+    color: #ccc;
+}
+
+/* 激活状态：蓝色背景 */
+.speed-btn.active {
+    background: var(--accent);
+    color: white;
+}
+/* 侧边栏顶部工具栏 */
+.sidebar-tools {
+    display: flex;
+    padding: 10px 15px;
+    background: #111;
+    border-bottom: 1px solid #222;
+    gap: 8px;
+}
+
+/* NEW 标签样式 */
+.badge-new {
+    background: #e74c3c;
+    color: white;
+    font-size: 9px;
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-weight: bold;
+    margin-left: 5px;
+    vertical-align: middle;
+}
+
+/* 侧边栏筛选按钮 */
+.side-filter-btn {
+    flex: 1;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    color: #888;
+    padding: 5px;
+    font-size: 11px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+.side-filter-btn.active {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+}
+/* 侧边栏专用下拉框样式 */
+.side-select {
+    flex: 1;
+    background: #252525;
+    border: 1px solid #333;
+    color: #ccc;
+    font-size: 11px;
+    padding: 4px;
+    border-radius: 4px;
+    outline: none;
+    min-width: 0; /* 防止撑破 flex */
+}
+.side-select:focus {
+    border-color: var(--accent);
+}
+.open-local-btn {
+    background: #333;
+    border: 1px solid #555;
+    color: #aaa;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    cursor: pointer;
+    margin-left: 5px;
+    transition: 0.2s;
+}
+.open-local-btn:hover {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+}
+
+/* AVI 提示遮罩 */
+.avi-overlay {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.9);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    z-index: 100;
+}
+#debug-panel {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    width: 250px;
+    background: rgba(0, 0, 0, 0.8);
+    color: #00ff00;
+    font-family: monospace;
+    font-size: 11px;
+    padding: 10px;
+    border-radius: 5px;
+    z-index: 10000;
+    pointer-events: none; /* 不挡鼠标 */
+    border: 1px solid #333;
+}
+.debug-line { margin-bottom: 4px; border-bottom: 1px solid #222; padding-bottom: 2px; }
+.gif-thumb {
+    width: 100%;
+    height: 120px;
+    object-fit: cover;
+    border-radius: 4px;
+    background: #000;
+    transition: transform 0.2s;
+}
+
+.gif-thumb:hover {
+    transform: scale(1.05); /* 悬停时放大 */
+    outline: 2px solid var(--accent);
+}
+/* 视频容器 */
+.video-preview-wrapper {
+    position: relative;
+    width: 100%;
+    height: 140px; /* 根据你的卡片大小调整 */
+    background: #000;
+    overflow: hidden;
+    cursor: pointer;
+}
+
+/* 视频本身 */
+.card-video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover; /* 保证视频填满容器不留黑边 */
+    transition: transform 0.3s ease;
+}
+
+/* 鼠标悬停时稍微放大 */
+.video-preview-wrapper:hover .card-video {
+    transform: scale(1.1);
+}
+
+/* 提示文字 */
+.play-hint {
+    position: absolute;
+    bottom: 5px;
+    right: 5px;
+    background: rgba(0,0,0,0.6);
+    color: #fff;
+    font-size: 10px;
+    padding: 2px 5px;
+    border-radius: 3px;
+    pointer-events: none; /* 防止遮挡视频点击 */
+}
+
+/* 初始状态显示一个播放图标或蒙层（可选） */
+.video-preview-wrapper::after {
+    content: '▶';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: rgba(255,255,255,0.5);
+    font-size: 24px;
+    transition: opacity 0.2s;
+}
+
+.video-preview-wrapper:hover::after {
+    opacity: 0; /* 播放时隐藏图标 */
+}
+/* 确保側边栏容器高度正确 */
+#v-list {
+    flex: 1;
+    overflow-y: auto;
+    background: var(--bg);
+}
+
+/* 视频项 */
+.v-item {
+    display: flex;
+    padding: 10px;
+    border-bottom: 1px solid #252525;
+    cursor: pointer;
+    gap: 12px;
+    align-items: flex-start; /* 顶部对齐 */
+}
+
+/* 文本容器：必须设置 min-width: 0 否则省略号会撑破布局 */
+.v-meta {
+    flex: 1;
+    min-width: 0; 
+}
+
+/* 按钮点击后的状态 */
+.side-filter-btn.active {
+    background: var(--accent) !important;
+    color: white !important;
+    border-color: white !important;
+}
+    </style>
+</head>
+<body>
+
+<div id="sidebar">
+    <div class="sidebar-header">
+        <div style="font-weight:bold; font-size:18px; color:var(--accent);">视频标记系统</div>
+        <div class="nav-links">
+            <a href="config.html">⚙ 字典配置</a>
+            <a href="batch.html">📦 批量管理</a>
+            <a href="wanted.html">📑 欲望清单</a> 
+            <a href="multi-select.html">🎬 筛选中心</a>
+        </div>
+    </div>
+
+    <!-- 合并后的工具栏 -->
+    <div style="background: #111; border-bottom: 1px solid #222; padding: 10px;">
+          <div style="margin-bottom: 10px;">
+        <label style="font-size: 11px; color: var(--accent); display: block; margin-bottom: 4px;">显示模式:</label>
+        <select id="side-display-mode" class="side-select" style="width: 100%; border-color: var(--accent);" onchange="toggleSideDisplayMode()">
+            <option value="video">整个视频 (Files)</option>
+            <option value="segment">视频片段 (Markers)</option>
+        </select>
+    </div>
+        <!-- 第一行：只要最新 + 刷新 -->
+        <div style="display:flex; gap: 8px; margin-bottom: 10px;">
+            <button id="side-latest-btn" class="side-filter-btn" style="flex: 1;" onclick="toggleSideLatest()">
+                🆕 只要最新 (3天内)
+            </button>
+            <button class="side-filter-btn" style="flex: 0 0 40px;" onclick="loadVideos()" title="刷新列表">
+                🔄
+            </button>
+        </div>
+        
+        <!-- 第二行：人种 + 演员 联动筛选 -->
+        <div style="display:flex; gap: 5px; margin-bottom: 5px;">
+            <select id="side-race-filter" class="side-select" style="flex: 1;" onchange="onSideRaceChange()">
+                <option value="">全部区域</option>
+            </select>
+            <select id="side-actor-filter" class="side-select" style="flex: 1;" onchange="renderVideoList()">
+                <option value="">全部演员</option>
+            </select>
+        </div>
+
+        <!-- 第三行：分辨率筛选 -->
+        <select id="side-res-filter" class="side-select" style="width: 100%;" onchange="renderVideoList()">
+            <option value="">全部分辨率</option>
+            <option value="4K">4K (>=2160P)</option>
+            <option value="1080P">1080P</option>
+            <option value="720P">720P</option>
+            <option value="SD">标清 (<720P)</option>
+        </select>
+    </div>
+
+    <div id="v-list"></div>
+</div>
+
+<div id="main">
+    <div id="player-view" style="display:none;">
+        <h2 id="v-title" style="margin:0 0 10px 0;"></h2>
+         <button id="focus-toggle" class="focus-btn" onclick="toggleFocusMode()">📺 专注模式</button>
+         <button onclick="handleDeleteVideo()" class="skip-btn" 
+                style="background: var(--danger); color: white; border: none; padding: 5px 15px; margin-left: 20px;">
+            彻底删除视频
+        </button>
+        
+    <div class="player-container">
+    <video id="video" crossorigin="anonymous" onclick="togglePlay()"></video>
+    
+    <!-- 简化后的预览浮窗：去掉大部分行内样式，交给 CSS 类处理 -->
+    <div id="progress-preview" style="display: none;">
+        <img src="" id="preview-img">
+        <div class="info" id="preview-info"></div>
+    </div>
+
+    <div class="controls">
+        <div class="progress-wrapper" id="progress-bar">
+            <div class="progress-fill" id="progress-fill"></div>
+            <div id="segments-layer" class="segments-layer"></div>
+        </div>
+        <div class="btn-group-row">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <button class="skip-btn" onclick="skipTime(-10)">-10s</button>
+                <button class="skip-btn" onclick="skipTime(-5)">-5s</button>
+                <button class="play-pause" id="play-btn" onclick="togglePlay()">播放</button>
+                <button class="skip-btn" onclick="skipTime(5)">+5s</button>
+                <button class="skip-btn" onclick="skipTime(10)">+10s</button>
+                   <div style="display: flex; gap: 2px; margin-left: 5px; background: #222; padding: 2px; border-radius: 4px; border: 1px solid #333;">
+            <button class="speed-btn" onclick="changeSpeed(0.5, this)">0.5x</button>
+            <button class="speed-btn active" id="default-speed" onclick="changeSpeed(1.0, this)">1x</button>
+            <button class="speed-btn" onclick="changeSpeed(2.0, this)">2x</button>
+             <button class="speed-btn" onclick="changeSpeed(3.0, this)">3x</button>
+    <button class="speed-btn" onclick="changeSpeed(5.0, this)">5x</button>
+        </div>
+                 <button id="toggle-jump-btn" class="cover-btn" onclick="toggleJumpMode()" style="background: #444; border: 1px solid #666;">
+            片段跳转: 关
+        </button>
+                <span id="time-text" style="margin-left:10px; font-family:monospace; color:#888;">00:00 / 00:00</span>
+            </div>
+            <button class="cover-btn" onclick="setAsCover()">设为封面</button>
+        </div>
+    </div>
+</div>
+<!-- 优化后的标记面板 -->
+<div class="panel" style="background: #161616; border: 1px solid #333;">
+    <!-- 第一层：时间控制与描述一体化 -->
+   <!-- 优化后的标记面板 第一层 -->
+<div style="display: flex; gap: 15px; align-items: flex-start; margin-bottom: 20px; border-bottom: 1px solid #222; padding-bottom: 15px;">
+    
+    <!-- 1. 时间区间控制 (原有) -->
+    <div style="flex: 0 0 240px; background: #000; padding: 12px; border-radius: 8px; border: 1px solid #444;">
+        <div style="font-size: 11px; color: #888; margin-bottom: 5px; text-transform: uppercase;">Time Segment</div>
+        <div class="capture-val" style="font-size: 20px; letter-spacing: 1px;">
+            <span id="start-val" style="color: var(--accent);">00:00</span> 
+            <span style="color: #444; margin: 0 5px;">→</span> 
+            <span id="end-val" style="color: #e74c3c;">00:00</span>
+        </div>
+        <div style="display: flex; gap: 5px; margin-top: 10px;">
+            <button onclick="capture('start')" style="flex:1; padding: 6px; font-size: 12px; background: #333; color: #eee; border: none; border-radius: 4px; cursor: pointer;">设为开始</button>
+            <button onclick="capture('end')" style="flex:1; padding: 6px; font-size: 12px; background: #333; color: #eee; border: none; border-radius: 4px; cursor: pointer;">设为结束</button>
+            
+        </div>
+    </div>
+
+    <!-- 2. 【新增】自定义缩略图截取区 -->
+    <div style="flex: 0 0 140px; background: #000; padding: 12px; border-radius: 8px; border: 1px solid #444; display: flex; flex-direction: column;">
+        <div style="font-size: 11px; color: #888; margin-bottom: 5px; text-transform: uppercase;">Segment Cover</div>
+        <!-- 预览图显示框 -->
+        <img id="segment-thumb-preview" src="" style="width: 100%; aspect-ratio: 16/9; background: #111; object-fit: cover; border-radius: 4px; border: 1px dashed #444; margin-bottom: 8px;">
+        <button onclick="captureCustomThumb()" style="padding: 6px; font-size: 11px; background: #27ae60; color: #fff; border: none; border-radius: 4px; cursor: pointer; transition: 0.2s;">
+            📸 截取当前画面
+        </button>
+    </div>
+
+    <!-- 3. 片段描述与保存 (原有，加了 flex:1) -->
+    <div style="flex: 1;">
+        <label style="font-size:12px; color:#888; display: block; margin-bottom: 5px;">片段描述</label>
+        <textarea id="desc-input" placeholder="输入标记备注（如：精彩转场、特定动作细节）..." 
+                  style="width: 100%; height: 50px; background: #222; border: 1px solid #444; color: #fff; border-radius: 6px; padding: 8px; box-sizing: border-box; resize: none;"></textarea>
+        
+        <div style="margin-top: 8px; display: flex; gap: 10px;">
+            <button class="save-btn" onclick="saveMarker()" style="flex: 1; padding: 8px; font-size: 14px;">确认保存标记片段</button>
+            <button id="edit-focused-btn" class="save-btn" onclick="goToEditFocused()" style="display: none; flex: 1; padding: 8px; font-size: 14px; background: #f39c12;">修改此片段</button>
+        </div>
+    </div>
+
+</div>
+
+    <!-- 第二层：三级联动属性选择 -->
+    <div class="select-row" style="margin-bottom: 0;">
+        <div>
+            <label style="font-size:11px; color:#666;">1. 人种 (Race)</label>
+            <select id="race-sel" onchange="updateActorLinkage()"></select>
+        </div>
+        <div>
+            <label style="font-size:11px; color:#666;">2. 演员 (Actor)</label>
+            <div style="display:flex; gap:5px;">
+                <select id="actor-sel" onchange="updatePoseLinkage()"></select>
+                <button onclick="quickAdd('actors')" style="background:#27ae60; border:none; color:white; padding:0 10px; border-radius:4px; cursor:pointer;">+</button>
+            </div>
+            <input type="text" id="quick-actor-input" placeholder="输入新演员..." style="display:none; margin-top:5px;">
+        </div>
+        <div>
+            <label style="font-size:11px; color:#666;">3. 姿势 (Pose)</label>
+            <div style="display:flex; gap:5px;">
+                <select id="pose-sel" onchange="showPosePreview()"></select>
+                <button onclick="quickAdd('poses')" style="background:#27ae60; border:none; color:white; padding:0 10px; border-radius:4px; cursor:pointer;">+</button>
+            </div>
+            <input type="text" id="quick-pose-input" placeholder="输入新姿势..." style="display:none; margin-top:5px;">
+        </div>
+    </div>
+
+    <!-- 第三层：姿势参考预览（全宽） -->
+    <div id="pose-preview-box" style="display:none; margin-top:20px; background: #000; padding: 12px; border-radius: 8px; border: 1px solid #222;">
+        <div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <div style="font-size: 11px; color: #888;">该演员的历史【参考姿势】:</div>
+            <div style="font-size: 10px; color: #444;">SHIFT + 滚轮可横向滑动</div>
+        </div>
+        <div id="pose-preview-thumbs" style="display: flex; gap: 10px; overflow-x: auto; padding-bottom: 5px;">
+            <!-- 缩略图插入 -->
+        </div>
+    </div>
+</div>
+
+        <h3 style="border-left:4px solid var(--accent); padding-left:10px;">片段列表</h3>
+        <div id="marker-grid"></div>
+    </div>
+</div>
+<div id="debug-panel">
+    <div class="debug-line">=== 自动识别调试器 ===</div>
+    <div class="debug-line">当前状态: <span id="db-status">准备就绪</span></div>
+    <div class="debug-line">计时起点: <span id="db-start">无</span></div>F
+    <div class="debug-line">已播时长: <span id="db-duration">0</span>s</div>
+    <div class="debug-line">识别阈值: 10s (测试用)</div>
+    <div class="debug-line">最后日志: <span id="db-log" style="color: #f1c40f;">等待操作...</span></div>
+</div>
+
+<canvas id="snapshot-canvas" style="display:none;"></canvas>
+
+<script>
+    const API = 'http://localhost:3000';
+    let currentVideo = null;
+    let customSegmentThumbBase64 = null; // 用于暂存用户手动截取的片段封面
+    let hls = null;
+    let startTime = 0;
+    let endTime = 0;
+    let videoCovers = {};
+    let globalConfig = { races: [], actors: [], poses: [] };
+    let allVideos = []; // 新增：全局存储视频列表
+    let isJumpToStartEnabled = false; // 默认关闭：穿透点击模式
+    let focusedMarkerId = null; // 用于记录当前点击的黄色色块对应的 ID
+    let isSidebarLatestOnly = false; // 侧边栏筛选状态
+    const video = document.getElementById('video');
+    let autoRecordedStartTime = null; // 用于记录你点击“后退”时的那个时间点
+    let autoSegmentStart = null; // 记录自动捕获的开始时间
+    let currentMarkers = []; // 新增全局变量，存储当前视频的所有标记
+    let allMarkers = []; // 新增：缓存全量标记
+let isSegmentMode = false; // 当前是否为片段模式
+
+let lastInteractionTime = Date.now();
+// --- 调试工具函数 ---
+function updateDebug(id, val) {
+    const el = document.getElementById(id);
+    if (el) el.innerText = val;
+}
+
+function logDebug(msg) {
+    console.log(`[DEBUG] ${msg}`);
+    updateDebug('db-log', msg);
+}
+function toggleSideDisplayMode() {
+    // 获取下拉框的当前值
+    const mode = document.getElementById('side-display-mode').value;
+    isSegmentMode = (mode === 'segment');
+    
+    console.log("显示模式切换为:", mode);
+    
+    // 执行重新渲染
+    renderVideoList();
+}
+// 实时更新调试面板的时长
+setInterval(() => {
+    if (typeof video !== 'undefined' && !video.paused) { // 只有在播放时才计算
+        if (autoSegmentStart === null) autoSegmentStart = video.currentTime;
+
+        const dur = Math.max(0, Math.round(video.currentTime - autoSegmentStart));
+        
+        updateDebug('db-start', formatTime(autoSegmentStart));
+        updateDebug('db-duration', dur + "s");
+
+        // 如果超过 60 秒还没保存，强制执行一次检查（防止太长）
+        if (dur >= 60) {
+            logDebug("达到60s上限，执行阶段性自动保存");
+            checkAndAutoSave(); 
+        }
+
+        if (dur >= 10) {
+            updateDebug('db-status', '符合保存条件 ✅');
+            document.getElementById('db-status').style.color = "#2ecc71";
+        } else {
+            updateDebug('db-status', '记录中...');
+            document.getElementById('db-status').style.color = "#888";
+        }
+    }
+}, 500);
+
+    window.onload = async () => {
+        await loadConfig();
+        await loadCovers();
+        await loadVideos();
+
+        // --- 新增：处理 URL 参数跳转逻辑 ---
+        const params = new URLSearchParams(window.location.search);
+        const targetPath = params.get('path');
+         const targetTime = params.get('time'); // 新增：获取时间参数
+        if (targetPath) {
+            // 在全局视频列表中寻找匹配路径的视频
+            const target = allVideos.find(v => v.path === targetPath);
+            if (target) {
+                const safeId = btoa(encodeURIComponent(targetPath)).replace(/=/g, '');
+                const element = document.getElementById('vitem-' + safeId);
+                if (element) {
+                    // 模拟点击加载视频
+                    selectVideo(target, element);
+                    // 如果有指定时间点，在视频准备好后跳转
+                if (targetTime) {
+                    const jump = () => {
+                        video.currentTime = parseFloat(targetTime);
+                        video.removeEventListener('loadedmetadata', jump);
+                        video.play();
+                    };
+                    if (video.readyState >= 1) {
+                        jump();
+                    } else {
+                        video.addEventListener('loadedmetadata', jump);
+                    }
+                }
+                }
+            }
+        }
+    };
+
+    /**
+ * 提前截取片段专属封面并预览
+ */
+function captureCustomThumb() {
+    if (!video) return;
+    const canvas = document.getElementById('snapshot-canvas');
+    canvas.width = video.videoWidth / 4;
+    canvas.height = video.videoHeight / 4;
+    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+    // 存入全局变量
+    customSegmentThumbBase64 = canvas.toDataURL('image/jpeg', 0.7);
+    
+    // 显示在 UI 上
+    document.getElementById('segment-thumb-preview').src = customSegmentThumbBase64;
+    document.getElementById('segment-thumb-preview').style.borderStyle = 'solid'; // 变实线表示已有图
+}
+
+/**
+ * 切换侧边栏只看最新
+ */
+function toggleSideLatest() {
+    // 1. 切换状态
+    isSidebarLatestOnly = !isSidebarLatestOnly;
+    
+    // 2. 更新按钮视觉状态
+    const btn = document.getElementById('side-latest-btn');
+    if (btn) {
+        if (isSidebarLatestOnly) {
+            btn.classList.add('active'); // 变成激活颜色（蓝色）
+        } else {
+            btn.classList.remove('active'); // 恢复普通颜色（深灰色）
+        }
+    }
+    
+    // 3. 立即重新渲染
+    renderVideoList(); 
+}
+/**
+ * 核心：执行侧边栏列表渲染逻辑（包含多重过滤与排序）
+ */
+/**
+ * 统一渲染函数：根据当前过滤状态生成 HTML 结构
+ */
+function renderVideoList() {
+    const list = document.getElementById('v-list');
+    if (!list) return;
+    list.innerHTML = '';
+
+    const raceFilter = document.getElementById('side-race-filter').value;
+    const actorFilter = document.getElementById('side-actor-filter').value;
+    const resFilter = document.getElementById('side-res-filter').value;
+    const threeDaysAgo = Date.now() - (3 * 24 * 60 * 60 * 1000);
+
+    if (!isSegmentMode) {
+        // --- 模式 1: 渲染整个视频 (原有逻辑) ---
+        let displayList = allVideos.filter(v => {
+            if (isSidebarLatestOnly && v.timestamp <= threeDaysAgo) return false;
+            if (raceFilter && v.race !== raceFilter) return false;
+            if (actorFilter && v.actor !== actorFilter) return false;
+            if (resFilter) {
+                const h = v.media?.height || 0;
+                if (resFilter === '4K' && h < 2160) return false;
+                if (resFilter === '1080P' && (h < 1080 || h >= 2160)) return false;
+                if (resFilter === '720P' && (h < 720 || h >= 1080)) return false;
+            }
+            return true;
+        });
+
+        displayList.forEach(v => renderVideoItem(v, list, threeDaysAgo));
+    } else {
+        // --- 模式 2: 渲染视频片段 (新逻辑) ---
+        let displayList = allMarkers.filter(m => {
+            if (m.time === 0 && m.end_time === 0) return false;
+            if (raceFilter && m.race !== raceFilter) return false;
+            if (actorFilter && m.actor !== actorFilter) return false;
+            // 片段模式的分辨率需要关联其父视频
+            if (resFilter) {
+                const parent = allVideos.find(v => v.path === m.video_path);
+                const h = parent?.media?.height || 0;
+                if (resFilter === '4K' && h < 2160) return false;
+                if (resFilter === '1080P' && (h < 1080 || h >= 2160)) return false;
+            }
+            return true;
+        });
+
+        displayList.forEach(m => renderSegmentItem(m, list));
+    }
+}
+
+/**
+ * 渲染单个视频项 (封装原有逻辑)
+ */
+/**
+ * 渲染单个视频项 (找回分辨率和时长)
+ */
+function renderVideoItem(v, container, threeDaysAgo) {
+    const thumb = videoCovers[v.path] || '';
+    const safeId = btoa(encodeURIComponent(v.path)).replace(/=/g, '');
+    
+    // --- 【核心逻辑：计算锁定状态】 ---
+    const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    const age = now - v.timestamp; // 使用文件创建时间戳
+    const isLocked = age < SEVEN_DAYS;
+    
+    let lockHtml = "";
+    if (isLocked) {
+        const remaining = SEVEN_DAYS - age;
+        const d = Math.floor(remaining / 86400000);
+        const h = Math.floor((remaining % 86400000) / 3600000);
+        lockHtml = `
+            <div class="lock-overlay">
+                <div class="lock-icon">🔒</div>
+                <div>${d}d ${h}h</div>
+            </div>
+        `;
+    }
+
+    const div = document.createElement('div');
+    div.className = 'v-item' + (isLocked ? ' is-locked' : '') + (currentVideo && currentVideo.path === v.path ? ' active' : '');
+    div.id = 'vitem-' + safeId;
+
+    div.innerHTML = `
+        <div style="position:relative; flex-shrink:0;">
+            <img src="${thumb}" class="v-thumb" onerror="this.style.opacity='0.2'">
+            ${lockHtml}
+        </div>
+        <div class="v-meta">
+            <span class="v-name">${v.name}</span>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">
+                <span class="v-tag">${v.type.toUpperCase()}</span>
+                <span style="font-size:10px; color:#555;">📅 ${v.dateAdded}</span>
+            </div>
+            <div style="font-size:10px; color:var(--accent); margin-top:3px;">👤 ${v.actor || '未标记'}</div>
+        </div>
+    `;
+
+    // 修改点击事件：如果是锁定的，弹出提醒
+    div.onclick = () => {
+        if (isLocked) {
+            alert(`🔒 该视频处于 7 天冷却期内。\n这是为了锻炼你的耐心，请在倒计时结束后再观看。`);
+            return;
+        }
+        selectVideo(v, div);
+    };
+
+    container.appendChild(div);
+}
+
+/**
+ * 渲染单个片段项 (新功能)
+ */
+/**
+ * 渲染单个片段项 (修复点击无反应问题)
+ */
+/**
+ * 渲染单个片段项 (同步加入分辨率)
+ */
+function renderSegmentItem(m, container) {
+    const parentVideo = allVideos.find(v => v.path === m.video_path);
+    if (!parentVideo) return;
+
+    // 获取父视频的分辨率标签
+    let resTag = '';
+    if (parentVideo.media && parentVideo.media.height) {
+        const h = parentVideo.media.height;
+        const resText = h >= 1080 ? (h >= 2160 ? '4K' : '1080P') : h + 'P';
+        resTag = `<span class="v-tag" style="font-size:9px; margin-left:4px;">${resText}</span>`;
+    }
+
+    const isVideoThumb = m.thumbnail?.endsWith('.mp4');
+    const div = document.createElement('div');
+    div.className = 'v-item';
+    div.style.borderLeft = "4px solid #2ecc71"; 
+
+    div.innerHTML = `
+        <div class="v-thumb-container" style="width:120px; height:68px; flex-shrink:0; background:#000; position:relative; border-radius:4px; overflow:hidden;">
+            ${isVideoThumb ? 
+                `<video src="${API}${m.thumbnail}" muted loop onmouseenter="this.play()" onmouseleave="this.pause()" style="width:100%; height:100%; object-fit:cover;"></video>` :
+                `<img src="${m.thumbnail}" style="width:100%; height:100%; object-fit:cover;">`
+            }
+            <span style="position:absolute; bottom:2px; right:2px; background:rgba(0,0,0,0.7); font-size:9px; padding:1px 3px; border-radius:2px;">
+                ${formatTime(m.time)}
+            </span>
+        </div>
+        <div class="v-meta">
+            <span class="v-name" style="color:#2ecc71; font-size:13px;">[片段] ${m.pose || '未命名'} ${resTag}</span>
+            <div style="font-size:11px; color:#aaa; margin-top:4px;">👤 ${m.actor || '未知'}</div>
+            <div style="font-size:10px; color:#555; margin-top:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${parentVideo.name}">
+                源: ${parentVideo.name}
+            </div>
+        </div>
+    `;
+    
+    div.onclick = () => {
+        selectVideo(parentVideo, null);
+        const jump = () => {
+            video.currentTime = m.time;
+            video.play();
+            video.removeEventListener('loadedmetadata', jump);
+        };
+        video.addEventListener('loadedmetadata', jump);
+        if (video.readyState >= 1) jump();
+    };
+    container.appendChild(div);
+}
+/**
+ * 后台静默保存片段
+ */
+async function silentAutoSave(sTime, eTime) {
+     // --- 【新增过滤条件】 ---
+    if (sTime <= 0) {
+        logDebug("❌ 拦截：起点为 0:00 的片段不予记录");
+        return; 
+    }
+     let existingMarker = currentMarkers.find(m => {
+        // 条件：1. 是自动识别的片段； 2. 时间上有交集（新起点在旧片段结束前，且新结束在旧起点后）
+        const isOverlap = (sTime < m.end_time + 5) && (eTime > m.time - 5); 
+        return m.description.includes("自动识别") && isOverlap;
+    });
+
+    if (existingMarker) {
+        // 如果发现重叠，计算合并后的新范围（取并集）
+        const newStart = Math.min(sTime, existingMarker.time);
+        const newEnd = Math.max(eTime, existingMarker.end_time);
+        
+        // 如果合并后的范围没有变化，则无需重复保存
+        if (newStart === existingMarker.time && newEnd === existingMarker.end_time) {
+            logDebug("跳过：片段内容已存在");
+            return;
+        }
+
+        logDebug(`合并片段: ${formatTime(newStart)} - ${formatTime(newEnd)}`);
+        
+        // 调用更新接口 (假设后端支持 PUT /api/markers/:id 或通过 POST 覆盖)
+        await updateExistingMarker(existingMarker.id, newStart, newEnd);
+        return;
+    }
+    if (!currentVideo) {
+        logDebug("错误：当前视频对象丢失");
+        return;
+    }
+
+    try {
+        const payload = {
+            video_path: currentVideo.path,
+            time: sTime,
+            end_time: eTime,
+            // 注意：这里可以不再传 thumbnail 的 base64 了
+            // 或者传一个占位符，由后端生成真正的 GIF
+            generate_gif: true, 
+            race: document.getElementById('race-sel').value || "自动",
+            actor: document.getElementById('actor-sel').value || "自动",
+            pose: document.getElementById('pose-sel').value || "自动识别",
+            description: `[自动识别] ${new Date().toLocaleTimeString()}`
+        };
+
+        const response = await fetch(`${API}/api/markers`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+
+        if ((await response.json()).success) {
+            logDebug("✅ 片段 GIF 已请求生成");
+            loadMarkers(); 
+        }
+    } catch (err) {
+        logDebug("❌ 请求失败");
+    }
+}
+/**
+ * 切换专注模式
+ */
+function toggleFocusMode() {
+    const isFocus = document.body.classList.toggle('focus-mode');
+    const btn = document.getElementById('focus-toggle');
+    
+    if (isFocus) {
+        btn.innerText = "退出专注";
+        btn.classList.add('active');
+        console.log("进入专注模式：尽情欣赏吧！");
+    } else {
+        btn.innerText = "📺 专注模式";
+        btn.classList.remove('active');
+        console.log("退出专注模式：回到管理界面");
+    }
+}
+
+// 补充键盘快捷键支持 (在之前的 keydown 监听里增加)
+document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+    if (e.key.toLowerCase() === 'f') { // 按 F 键切换专注模式
+        toggleFocusMode();
+    }
+});
+// 简单的提示小浮窗
+function showAutoToast(msg) {
+    const toast = document.createElement('div');
+    toast.innerText = msg;
+    toast.style.cssText = "position:fixed; bottom:50px; right:20px; background:rgba(46,204,113,0.8); color:white; padding:10px 20px; border-radius:5px; z-index:9999; pointer-events:none;";
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 2000);
+}
+function onSideRaceChange() {
+    const race = document.getElementById('side-race-filter').value;
+    const actorSel = document.getElementById('side-actor-filter');
+    
+    actorSel.innerHTML = '<option value="">全部演员</option>';
+    if (race) {
+        globalConfig.actors.filter(a => a.race_name === race).forEach(a => {
+            actorSel.innerHTML += `<option value="${a.name}">${a.name}</option>`;
+        });
+    }
+    renderVideoList(); // 触发重新渲染
+}
+async function updateExistingMarker(id, sTime, eTime) {
+    try {
+        const payload = {
+            time: sTime,
+            end_time: eTime,
+            description: `[自动识别] 更新于 ${new Date().toLocaleTimeString()}`
+        };
+
+        const response = await fetch(`${API}/api/markers/${id}`, {
+            method: 'PUT', // 或者用 PATCH，取决于你的后端接口
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+
+        const res = await response.json();
+        if (res.success) {
+            logDebug("✅ 片段已自动扩充/合并");
+            loadMarkers(); // 刷新界面显示
+        }
+    } catch (err) {
+        logDebug("❌ 合并请求失败");
+    }
+}
+
+/**
+ * 加载视频数据（后端获取）
+ */
+
+
+/**
+ * 渲染侧边栏列表（前端过滤与展示）
+ */
+/**
+ * 统一渲染侧边栏列表 (修复模式叠加显示问题)
+ */
+function renderVideoList() {
+    const list = document.getElementById('v-list');
+    if (!list) return;
+
+    // --- 【第一步：彻底清空列表】 ---
+    list.innerHTML = '';
+
+    // 获取当前筛选器的值
+    const raceFilter = document.getElementById('side-race-filter')?.value || "";
+    const actorFilter = document.getElementById('side-actor-filter')?.value || "";
+    const resFilter = document.getElementById('side-res-filter')?.value || "";
+    const threeDaysAgo = Date.now() - (3 * 24 * 60 * 60 * 1000);
+
+    // --- 【第二步：根据模式进入严格的分支逻辑】 ---
+    
+    if (!isSegmentMode) {
+        // ==========================================
+        // 模式 A: 整个视频模式 (Files)
+        // ==========================================
+        const displayList = allVideos.filter(v => {
+            // 过滤：只要最新
+            if (isSidebarLatestOnly && v.timestamp <= threeDaysAgo) return false;
+            // 过滤：人种
+            if (raceFilter && v.race !== raceFilter) return false;
+            // 过滤：演员
+            if (actorFilter && v.actor !== actorFilter) return false;
+            // 过滤：分辨率
+            if (resFilter) {
+                const h = v.media?.height || 0;
+                if (resFilter === '4K' && h < 2160) return false;
+                if (resFilter === '1080P' && (h < 1080 || h >= 2160)) return false;
+                if (resFilter === '720P' && (h < 720 || h >= 1080)) return false;
+                if (resFilter === 'SD' && (h >= 720 || h === 0)) return false;
+            }
+            return true;
+        });
+
+        // 只渲染视频条目
+        displayList.forEach(v => renderVideoItem(v, list, threeDaysAgo));
+
+    } else {
+        // ==========================================
+        // 模式 B: 视频片段模式 (Markers)
+        // ==========================================
+        const displayList = allMarkers.filter(m => {
+            // 排除批量产生的 0秒 占位符
+            if (m.time === 0 && m.end_time === 0) return false;
+            // 过滤：只要最新 (针对片段添加日期)
+            if (isSidebarLatestOnly) {
+                // 如果片段没有记录 timestamp，可以用 m.id 倒序或默认不开启
+            }
+            // 过滤：人种
+            if (raceFilter && m.race !== raceFilter) return false;
+            // 过滤：演员
+            if (actorFilter && m.actor !== actorFilter) return false;
+            // 过滤：分辨率 (片段需关联父视频的分辨率)
+            if (resFilter) {
+                const parent = allVideos.find(v => v.path === m.video_path);
+                const h = parent?.media?.height || 0;
+                if (resFilter === '4K' && h < 2160) return false;
+                if (resFilter === '1080P' && (h < 1080 || h >= 2160)) return false;
+                if (resFilter === '720P' && (h < 720 || h >= 1080)) return false;
+            }
+            return true;
+        });
+
+        // 只渲染片段条目
+        displayList.forEach(m => renderSegmentItem(m, list));
+    }
+
+    // --- 第三步：处理空结果 ---
+    if (list.innerHTML === '') {
+        const msg = isSegmentMode ? "未找到匹配的片段" : "未找到匹配的视频";
+        list.innerHTML = `<div style="padding:40px; color:#444; text-align:center;">${msg}</div>`;
+    }
+}
+    // --- 数据加载 ---
+  async function loadConfig() {
+    const res = await fetch(`${API}/api/config`).then(r => r.json());
+    globalConfig = res;
+    
+    // 初始化【标记面板】的下拉框
+    fillSelect(document.getElementById('race-sel'), res.races, "--请选择--");
+    fillSelect(document.getElementById('pose-sel'), res.poses, "--请选择--");
+
+    // 【新增】初始化【侧边栏筛选】的人种下拉框
+    const sideRaceFilter = document.getElementById('side-race-filter');
+    sideRaceFilter.innerHTML = '<option value="">全部区域</option>';
+    res.races.forEach(r => {
+        sideRaceFilter.innerHTML += `<option value="${r.name}">${r.name}</option>`;
+    });
+}
+/**
+ * 快速保存当前看过的片段（从最近一次回跳开始到现在的点）
+ */
+async function quickSaveCurrentSegment() {
+    if (startTime === null || startTime === 0) {
+        alert("请先通过 -5s 或 -10s 寻找片段开头");
+        return;
+    }
+
+    // 将当前播放到的位置设为结束点
+    endTime = video.currentTime;
+    document.getElementById('end-val').innerText = formatTime(endTime);
+
+    if (endTime <= startTime) {
+        alert("当前位置必须在回跳点之后");
+        return;
+    }
+
+    // 自动截取当前精彩画面作为封面
+    captureCustomThumb(); 
+
+    // 获取当前已选的标签（如果没有，则使用默认值方便后续筛选）
+    const race = document.getElementById('race-sel').value || "待分类";
+    const actor = document.getElementById('actor-sel').value || "待整理";
+    const pose = document.getElementById('pose-sel').value || "待标记";
+
+    // 直接调用保存逻辑
+    await saveMarker();
+    
+    console.log("快速片段已保存，稍后可在列表中点击‘修改’完善数据");
+}
+/**
+     * 快捷添加 演员 或 姿势
+     * @param {string} category 'actors' 或 'poses'
+     */
+    async function quickAdd(category) {
+        const raceName = document.getElementById('race-sel').value;
+        const actorName = document.getElementById('actor-sel').value;
+        
+        const inputId = category === 'actors' ? 'quick-actor-input' : 'quick-pose-input';
+        const inputEl = document.getElementById(inputId);
+
+        // 1. 切换输入框显示/隐藏
+        if (inputEl.style.display === 'none') {
+            inputEl.style.display = 'block';
+            inputEl.focus();
+            return;
+        }
+
+        // 2. 如果输入框已显示，则执行添加逻辑
+        let nameValue = inputEl.value.trim();
+        if (!nameValue) {
+            inputEl.style.display = 'none'; // 为空则收起
+            return;
+        }
+
+        let payload = { name: nameValue };
+
+        if (category === 'actors') {
+            if (!raceName) return alert("请先选择所属【人种】");
+            // 自动处理“未知”逻辑
+            if (nameValue === "未知") nameValue = `未知（${raceName}）`;
+            payload.name = nameValue;
+            payload.race_name = raceName;
+        } else if (category === 'poses') {
+            if (!actorName) return alert("请先选择所属【演员】");
+            payload.actor_name = actorName;
+        }
+
+        // 3. 提交到后端
+        try {
+            const res = await fetch(`${API}/api/config/${category}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }).then(r => r.json());
+
+            if (res.success) {
+                // 4. 清空并隐藏输入框
+                inputEl.value = '';
+                inputEl.style.display = 'none';
+                
+                // 5. 重新加载全局配置数据
+                await loadConfig();
+                
+                // 6. 自动选中刚才添加的项
+                if (category === 'actors') {
+                    document.getElementById('actor-sel').value = payload.name;
+                    updatePoseLinkage(); // 触发姿势联动
+                } else {
+                    document.getElementById('pose-sel').value = payload.name;
+                }
+                
+                console.log(`已添加新${category === 'actors' ? '演员' : '姿势'}: ${payload.name}`);
+            } else {
+                alert(res.message || "添加失败，可能已存在");
+            }
+        } catch (e) {
+            alert("请求失败，请检查后端服务");
+        }
+    }
+    /**
+ * 跳转到 edit.html 修改当前正在查看的片段
+ */
+function goToEditFocused() {
+    if (focusedMarkerId) {
+        window.open(`edit.html?id=${focusedMarkerId}`, 'VideoEditWindow');
+    } else {
+        alert("请先点击进度条上的黄色色块选中一个片段");
+    }
+}
+    /**
+     * 显示该演员同种姿势的参考缩略图
+     */
+  async function showPosePreview() {
+    const actorName = document.getElementById('actor-sel').value;
+    const poseName = document.getElementById('pose-sel').value;
+    const previewBox = document.getElementById('pose-preview-box');
+    const thumbsContainer = document.getElementById('pose-preview-thumbs');
+
+    if (!actorName || !poseName) {
+        previewBox.style.display = 'none';
+        return;
+    }
+
+    try {
+        const res = await fetch(`${API}/api/pose-preview?actor=${encodeURIComponent(actorName)}&pose=${encodeURIComponent(poseName)}`).then(r => r.json());
+
+        if (res.success && res.data.length > 0) {
+            thumbsContainer.innerHTML = '';
+            previewBox.style.display = 'block';
+
+            res.data.forEach(item => {
+                const img = document.createElement('img');
+                img.src = item.thumbnail;
+                img.title = "点击查看大图";
+                img.onclick = () => window.open(item.thumbnail);
+                thumbsContainer.appendChild(img);
+            });
+        } else {
+            previewBox.style.display = 'none';
+        }
+    } catch (e) {
+        console.error("预览加载失败", e);
+    }
+}
+    async function loadCovers() {
+        const res = await fetch(`${API}/api/covers`).then(r => r.json());
+        res.data.forEach(c => videoCovers[c.video_path] = c.thumbnail);
+    }
+ function toggleJumpMode() {
+    isJumpToStartEnabled = !isJumpToStartEnabled;
+    const btn = document.getElementById('toggle-jump-btn');
+    const editBtn = document.getElementById('edit-focused-btn');
+    
+    if (isJumpToStartEnabled) {
+        btn.innerText = "片段跳转: 开";
+        btn.style.background = "var(--accent)";
+    } else {
+        btn.innerText = "片段跳转: 关";
+        btn.style.background = "#444";
+        editBtn.style.display = 'none'; // 关闭模式时隐藏修改按钮
+        focusedMarkerId = null;
+    }
+}
+
+/**
+ * 从后端加载原始数据并排序，然后触发统一渲染
+ */
+async function loadVideos() {
+    try {
+        const [vRes, mRes] = await Promise.all([
+            fetch(`${API}/api/videos`).then(r => r.json()),
+            fetch(`${API}/api/all-markers`).then(r => r.json())
+        ]);
+        
+        allVideos = vRes.data.sort((a, b) => b.timestamp - a.timestamp);
+        allMarkers = mRes.data || [];
+        
+        // 核心：只需调用这个函数即可，它会自动判断当前该画哪个模式
+        renderVideoList(); 
+        
+    } catch (err) {
+        console.error("加载数据失败:", err);
+    }
+}
+
+    // --- 播放逻辑 ---
+/**
+     * 选择并播放视频
+     * @param {Object} v 视频数据对象
+     * @param {HTMLElement} el 侧边栏对应的 DOM 元素
+     */
+    function selectVideo(v, el) {
+        // 切换视频时，重置自动捕获状态
+    autoSegmentStart = null; 
+    lastInteractionTime = Date.now();
+     // 初始化自动计时
+ // 改为监听器模式，不要直接赋值
+video.addEventListener('play', () => {
+    if (autoSegmentStart === null) {
+        autoSegmentStart = video.currentTime;
+        logDebug("视频开始播放，设定初始起点");
+        updateDebug('db-start', formatTime(autoSegmentStart));
+    }
+});
+        currentVideo = v;
+         video.playbackRate = 1.0; 
+    document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+    if(document.getElementById('default-speed')) {
+        document.getElementById('default-speed').classList.add('active');
+    }
+        
+        // 1. UI 状态更新
+        document.querySelectorAll('.v-item').forEach(i => i.classList.remove('active'));
+        if (el) el.classList.add('active'); 
+        document.getElementById('player-view').style.display = 'block';
+        document.getElementById('v-title').innerText = v.name;
+        
+        const url = `${API}/content/${v.relativeUrl}`;
+        
+        // 2. 清理旧的 HLS 实例
+        if (hls) {
+            hls.destroy();
+            hls = null;
+        }
+
+        // 3. 检查是否已有封面图缓存
+        const hasCover = !!videoCovers[v.path];
+
+        // --- 核心新增：定义媒体信息上报逻辑 ---
+        const reportMediaInfo = () => {
+            // 如果该视频还没有媒体信息，或者时长/分辨率不匹配，则上报给后端
+            const mediaData = {
+                video_path: v.path,
+                width: video.videoWidth,
+                height: video.videoHeight,
+                duration: video.duration
+            };
+
+            // 只有当本地数据中缺少 media 信息时才发送请求（减少不必要的网络开销）
+            if (!v.media || v.media.duration !== video.duration) {
+                fetch(`${API}/api/save-video-info`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(mediaData)
+                })
+                .then(res => res.json())
+                .then(res => {
+                    if (res.success) {
+                        v.media = mediaData; // 更新本地内存数据，防止下次点击重复上报
+                        console.log("媒体信息已同步至数据库:", mediaData);
+                        // 可选：在此处调用 loadVideos() 刷新侧边栏标签显示，
+                        // 但为了性能建议等下次全局刷新
+                    }
+                });
+            }
+        };
+
+        // --- 核心新增：统一监听元数据加载 ---
+        video.onloadedmetadata = () => {
+            // 抓取分辨率和时长
+            reportMediaInfo();
+
+            // 如果 URL 参数中有跳转时间（从 pose-select.html 跳转过来）
+            const params = new URLSearchParams(window.location.search);
+            const targetTime = params.get('time');
+            if (targetTime) {
+                video.currentTime = parseFloat(targetTime);
+                // 清理 URL 参数，防止刷新页面时重复跳转
+                window.history.replaceState({}, document.title, window.location.pathname + "?path=" + encodeURIComponent(v.path));
+            }
+        };
+
+         // 清理 AVI 提示（如果存在）
+    const existingOverlay = document.querySelector('.avi-overlay');
+    if (existingOverlay) existingOverlay.remove();
+
+  if (v.type === 'avi') {
+    video.pause();
+    video.src = "";
+    
+    const overlay = document.createElement('div');
+    overlay.className = 'avi-overlay';
+    overlay.innerHTML = `
+        <div style="font-size: 40px; margin-bottom: 20px;">⚡</div>
+        <p>浏览器不支持 AVI 格式</p>
+        <div style="display:flex; gap:10px;">
+            <button class="save-btn" onclick="openLocal('${v.path.replace(/\\/g, '\\\\')}')">本地播放</button>
+            <button class="save-btn" style="background:#f39c12" onclick="startConvert('${v.path.replace(/\\/g, '\\\\')}')">5060 显卡转码为 MP4</button>
+        </div>
+        <div id="convert-status" style="margin-top:20px; color:#aaa; font-size:12px;"></div>
+    `;
+    document.querySelector('.player-container').appendChild(overlay);
+    return;
+}
+         // --- 修改点：处理 AVI 播放限制 ---
+    if (v.type === 'avi') {
+        alert("提示：浏览器原生不支持播放 AVI 格式。请使用格式工厂将其转为 MP4，或在本地播放器查看。");
+        // 你也可以在界面上显示一个特殊的占位符，而不是空白播放器
+        return; 
+    }
+
+        // 4. 执行播放逻辑
+        if (v.type === 'm3u8') {
+            if (Hls.isSupported()) {
+                hls = new Hls(); 
+                hls.loadSource(url); 
+                hls.attachMedia(video);
+                hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                    video.play();
+                    // 如果没有封面，则触发自动截取
+                    if(!hasCover) autoCapture();
+                });
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                // 兼容 Safari 原生播放
+                video.src = url;
+                video.play();
+                if(!hasCover) autoCapture();
+            }
+        } else {
+            // 普通 MP4 播放
+            video.src = url; 
+            video.play();
+            // MP4 在数据加载完成后尝试自动截取封面
+            if(!hasCover) {
+                const onLoaded = () => {
+                    autoCapture();
+                    video.removeEventListener('loadeddata', onLoaded);
+                };
+                video.addEventListener('loadeddata', onLoaded);
+            }
+        }
+        
+        // 5. 重置标记面板状态并加载现有标记
+        startTime = 0; 
+        endTime = 0;
+        document.getElementById('start-val').innerText = "00:00";
+        document.getElementById('end-val').innerText = "00:00";
+         customSegmentThumbBase64 = null;
+    document.getElementById('segment-thumb-preview').src = "";
+    document.getElementById('segment-thumb-preview').style.borderStyle = "dashed";
+        loadMarkers();
+    }
+
+    // --- 封面管理 ---
+    function autoCapture() {
+        video.currentTime = 0;
+        const shot = async () => {
+            await setAsCover(true);
+            video.removeEventListener('seeked', shot);
+        };
+        video.addEventListener('seeked', shot);
+    }
+async function setAsCover(isSilent = false) {
+    if (!currentVideo) return;
+    const canvas = document.getElementById('snapshot-canvas');
+    canvas.width = video.videoWidth / 4; 
+    canvas.height = video.videoHeight / 4;
+    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+    const base64 = canvas.toDataURL('image/jpeg', 0.7);
+
+    // 1. 发送给后端保存
+    await fetch(`${API}/api/save-cover`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ video_path: currentVideo.path, thumbnail: base64 })
+    });
+
+    // 2. 更新本地缓存对象
+    videoCovers[currentVideo.path] = base64;
+
+    // 3. 【关键】立即更新侧边栏图片
+    // 使用与 renderVideoItem 相同的算法计算 safeId
+    const safeId = btoa(encodeURIComponent(currentVideo.path)).replace(/=/g, '');
+    const sideImg = document.getElementById(`thumb-${safeId}`);
+    
+    if (sideImg) {
+        sideImg.src = base64; // 直接替换 Base64 字符串，图片会立即变动
+        sideImg.style.opacity = "1"; // 如果之前因为 onerror 变成了 0.2，这里恢复
+    }
+
+    if (!isSilent) alert("封面已更新");
+}
+
+    // --- 标记逻辑 ---
+    function capture(type) {
+        if(type === 'start') { startTime = video.currentTime; document.getElementById('start-val').innerText = formatTime(startTime); }
+        else { endTime = video.currentTime; document.getElementById('end-val').innerText = formatTime(endTime); }
+    }
+
+  /**
+ * 保存新的标记片段
+ */
+async function saveMarker() {
+    const saveBtn = document.querySelector('.save-btn');
+    
+    // 1. 基础校验
+    if (startTime === 0 && endTime === 0) {
+        alert("请先通过‘设为开始’和‘设为结束’确定视频片段！");
+        return;
+    }
+    if (endTime <= startTime) {
+        alert("结束时间必须大于开始时间！");
+        return;
+    }
+
+    // 2. 防止重复提交
+    if (saveBtn.disabled) return; 
+    saveBtn.disabled = true;
+    const originalText = saveBtn.innerText;
+    
+    // 提示用户正在生成 GIF，因为 5060 虽然快，但 FFmpeg 启动也需要 1-2 秒
+    saveBtn.innerText = "🚀 5060 正在生成 GIF 预览..."; 
+    saveBtn.style.opacity = "0.7";
+
+    // 3. 准备数据 (注意：这里不再发送 thumbnail 字段)
+    const payload = {
+        video_path: currentVideo.path,
+        time: startTime,
+        end_time: endTime,
+        race: document.getElementById('race-sel').value,
+        actor: document.getElementById('actor-sel').value,
+        pose: document.getElementById('pose-sel').value,
+        description: document.getElementById('desc-input').value
+    };
+
+    try {
+        const response = await fetch(`${API}/api/markers`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        const res = await response.json();
+
+        if (res.success) {
+            console.log("GIF 标记保存成功:", res.id);
+            loadMarkers(); // 刷新下方列表，此时你会看到列表里的图是动的
+            
+            // 4. 重置 UI 捕获状态
+            startTime = 0; 
+            endTime = 0;
+            document.getElementById('start-val').innerText = "00:00";
+            document.getElementById('end-val').innerText = "00:00";
+            document.getElementById('desc-input').value = "";
+            
+            // 清理手动截取的预览图（如果之前有的话）
+            customSegmentThumbBase64 = null;
+            const previewImg = document.getElementById('segment-thumb-preview');
+            if(previewImg) {
+                previewImg.src = "";
+                previewImg.style.borderStyle = "dashed";
+            }
+        } else {
+            alert(res.message || "保存失败");
+        }
+    } catch (e) {
+        console.error("提交请求失败:", e);
+        alert("网络连接失败，请检查后端服务是否开启了 FFmpeg 支持");
+    } finally {
+        // 5. 恢复按钮
+        saveBtn.disabled = false;
+        saveBtn.innerText = originalText;
+        saveBtn.style.opacity = "1";
+    }
+}
+/**
+ * 处理视频删除逻辑
+ */
+async function handleDeleteVideo() {
+    if (!currentVideo) return;
+
+    // 二次确认，防止误删
+    const confirmMsg = `⚠️ 警告：\n1. 将从硬盘永久删除该视频文件。\n2. 将清空所有相关标记和封面数据。\n\n确定要继续吗？`;
+    
+    if (!confirm(confirmMsg)) return;
+
+    try {
+        const res = await fetch(`${API}/api/videos`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: currentVideo.path })
+        }).then(r => r.json());
+
+        if (res.success) {
+            alert("视频已从硬盘移除！");
+            
+            // 1. 停止播放
+            if (hls) hls.destroy();
+            video.pause();
+            video.src = "";
+            
+            // 2. 隐藏播放区域
+            document.getElementById('player-view').style.display = 'none';
+            currentVideo = null;
+            
+            // 3. 重新加载侧边栏列表
+            loadVideos();
+        } else {
+            alert("删除失败：" + res.message);
+        }
+    } catch (e) {
+        console.error("请求失败", e);
+        alert("无法连接服务器进行删除操作");
+    }
+}
+
+async function loadMarkers() {
+    // 1. 获取当前视频的所有标记
+    const res = await fetch(`${API}/api/markers?path=${encodeURIComponent(currentVideo.path)}`).then(r => r.json());
+     currentMarkers = res.data; // 将数据存入缓存
+    const grid = document.getElementById('marker-grid');
+    const segments = document.getElementById('segments-layer');
+    
+    // 清空现有 UI
+    grid.innerHTML = ''; 
+    segments.innerHTML = '';
+
+    const markers = res.data;
+
+    // --- 【核心修改：数据自动回填/记忆功能】 ---
+    if (markers.length > 0) {
+        // 取出最新的一个标记（通常代表了该视频的分类属性）
+        const lastData = markers[markers.length - 1];
+
+        // 回填人种
+        if (lastData.race) {
+            const raceSel = document.getElementById('race-sel');
+            raceSel.value = lastData.race;
+            
+            // 【关键】必须手动调用联动函数，否则演员下拉框是空的
+            updateActorLinkage(); 
+
+            // 回填演员
+            if (lastData.actor) {
+                const actorSel = document.getElementById('actor-sel');
+                actorSel.value = lastData.actor;
+                
+                // 【关键】手动调用姿势联动
+                updatePoseLinkage();
+
+                // (可选) 如果你也想记忆上一次的姿势
+                if (lastData.pose) {
+                    document.getElementById('pose-sel').value = lastData.pose;
+                    // 触发姿势预览图
+                    if (typeof showPosePreview === 'function') showPosePreview();
+                }
+            }
+        }
+    } else {
+        // 如果视频没有任何标记，重置下拉框到默认状态
+        document.getElementById('race-sel').value = "";
+        updateActorLinkage(); // 这会清空演员和姿势
+    }
+
+    // --- 2. 渲染片段列表和进度条色块 ---
+    markers.forEach(m => {
+        // 过滤掉批量管理产生的 0:00 占位数据，不显示在列表中
+        if (m.time === 0 && m.end_time === 0) return;
+          const durationStr = formatTime(m.end_time - m.time);
+
+        // 渲染下方的片段卡片
+        const card = document.createElement('div');
+        card.className = 'card';
+      card.innerHTML = `
+        <button class="del-mark" onclick="deleteMarker(event, ${m.id})">删除</button>
+        <button class="edit-mark" onclick="openEditPage(event, ${m.id})">修改</button>
+        <div class="video-preview-wrapper">
+            <video 
+                src="${API}${m.thumbnail}" 
+                class="card-video" 
+                muted 
+                loop 
+                preload="metadata"
+                onmouseenter="this.play()" 
+                onmouseleave="this.pause(); this.currentTime = 0;"
+                onclick="jumpToVideoTime(${m.time})">
+            </video>
+            <div class="play-hint">HOVER TO PREVIEW</div>
+        </div>
+        <div class="card-body">
+            <div class="card-time">${formatTime(m.time)} - ${formatTime(m.end_time)}</div>
+            <div class="pill-box">
+                <span class="pill" style="background:#6d214f;">${m.race}</span>
+                <span class="pill" style="background:#182c61;">${m.actor}</span>
+                <span class="pill" style="background:#218c74;">${m.pose}</span>
+            </div>
+        </div>
+    `;
+        grid.appendChild(card);
+
+        // 渲染进度条上的色块
+    // --- 渲染进度条上的黄色色块 ---
+        if (video.duration && m.end_time) {
+            const seg = document.createElement('div');
+            seg.className = 'marker-segment';
+            seg.style.left = (m.time / video.duration * 100) + '%';
+            seg.style.width = ((m.end_time - m.time) / video.duration * 100) + '%';
+            seg.style.pointerEvents = 'auto'; // 开启交互
+
+            // 1. 鼠标移入：显示 MP4 视频预览或图片预览
+            seg.onmouseenter = (e) => {
+                const previewBox = document.getElementById('progress-preview');
+                if (!previewBox) return;
+
+                // 判断数据库里存的是 MP4 路径还是 Base64 图片
+                const isVideo = m.thumbnail && m.thumbnail.endsWith('.mp4');
+            const mediaUrl = `${API}${m.thumbnail}`; 
+
+                // 动态构造预览内容
+                // 如果是视频，使用 <video> 标签，设置为自动播放、静音、循环
+                const mediaHtml = isVideo ? 
+                    `<video src="${mediaUrl}" autoplay loop muted playsinline 
+                        style="width: 180px; aspect-ratio: 16/9; object-fit: cover; display: block; border-radius: 4px; background:#000;">
+                     </video>` : 
+                    `<img src="${mediaUrl}" 
+                        style="width: 180px; aspect-ratio: 16/9; object-fit: cover; display: block; border-radius: 4px;">`;
+
+                // 填充 HTML (包含之前定义的 CSS 样式)
+                previewBox.innerHTML = `
+                    ${mediaHtml}
+                    <div class="info" style="font-size: 12px; color: #fff; margin-top: 6px; font-weight: bold;">
+                        ${m.pose} (${m.actor})
+                    </div>
+                `;
+
+                previewBox.style.display = 'block';
+
+                // --- 核心定位逻辑 (补全部分) ---
+                // 计算色块的中心点在进度条上的百分比位置
+                const midTime = m.time + (m.end_time - m.time) / 2;
+                const posPercent = (midTime / video.duration) * 100;
+
+                // 设置百分比 left，配合 CSS 的 transform: translateX(-50%) 实现完美对齐
+                previewBox.style.left = posPercent + "%";
+            };
+
+            // 2. 鼠标移出：隐藏预览
+            seg.onmouseleave = () => {
+                const previewBox = document.getElementById('progress-preview');
+                if (previewBox) {
+                    previewBox.style.display = 'none';
+                    previewBox.innerHTML = ''; // 清空内容，停止视频后台播放
+                }
+            };
+
+            // 3. 点击逻辑 (保持你之前的跳转模式开关逻辑)
+            seg.onclick = (e) => {
+                e.stopPropagation();
+                if (typeof isJumpToStartEnabled !== 'undefined' && isJumpToStartEnabled) {
+                    video.currentTime = m.time;
+                    document.getElementById('pose-sel').value = m.pose || '';
+                    document.getElementById('desc-input').value = m.description || '';
+                    focusedMarkerId = m.id;
+                    const editBtn = document.getElementById('edit-focused-btn');
+                    if(editBtn) editBtn.style.display = 'block';
+                } else {
+                    const bar = document.getElementById('progress-bar');
+                    const rect = bar.getBoundingClientRect();
+                    const clickX = e.clientX - rect.left;
+                    video.currentTime = (clickX / rect.width) * video.duration;
+                }
+            };
+
+            segments.appendChild(seg);
+        }
+    });
+
+    if (grid.innerHTML === '') {
+        grid.innerHTML = '<div style="color:#666; padding:20px; text-align:center; width:100%;">尚未标记任何片段</div>';
+    }
+}
+
+  async function deleteMarker(e, id) {
+    if (e) e.stopPropagation();
+
+    // 调试日志：显示在你的调试面板和控制台
+    logDebug(`[DELETE] 准备删除片段 ID: ${id}`);
+    console.log(`[DEBUG] 发起 DELETE 请求: ${API}/api/markers/${id}`);
+
+    if (!confirm(`确定要永久删除 ID 为 ${id} 的标记吗？`)) {
+        logDebug(`[DELETE] 用户取消删除`);
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API}/api/markers/${id}`, {
+            method: 'DELETE'
+        });
+
+        console.log(`[DEBUG] 服务器响应状态码: ${response.status}`);
+        const res = await response.json();
+        console.log(`[DEBUG] 服务器返回内容:`, res);
+
+        if (res.success) {
+            logDebug(`[DELETE] ✅ 后端确认删除成功`);
+            
+            // 【关键】只有成功了才移除 DOM
+            const cardEl = document.getElementById(`marker-card-${id}`);
+            const segEl = document.getElementById(`marker-seg-${id}`);
+            
+            if (cardEl) {
+                cardEl.style.border = "2px solid red"; // 闪烁一下提示删除
+                setTimeout(() => cardEl.remove(), 200);
+            }
+            if (segEl) segEl.remove();
+
+            // 更新内存缓存
+            if (typeof currentMarkers !== 'undefined') {
+                currentMarkers = currentMarkers.filter(m => m.id !== id);
+            }
+        } else {
+            logDebug(`[DELETE] ❌ 后端返回失败: ${res.message}`);
+            alert("删除失败: " + res.message);
+        }
+    } catch (err) {
+        console.error("[DEBUG] Fetch 异常:", err);
+        logDebug(`[DELETE] 💥 网络请求崩溃`);
+        alert("网络错误，请检查后端控制台日志");
+    }
+}
+     function openEditPage(event, id) {
+        // 阻止冒泡，防止触发卡片上的视频播放点击
+        if (event) event.stopPropagation();
+        
+        // 打开 edit.html，传递 id
+        window.open(`edit.html?id=${id}`, 'VideoEditWindow');
+    }
+function jumpToVideoTime(time) {
+    if (video) {
+        video.currentTime = time;
+        video.play();
+        // 如果开启了专注模式，可以在这里自动切换
+        console.log(`跳转至片段起点: ${formatTime(time)}`);
+    }
+}
+    // --- 辅助功能 ---
+ function updateActorLinkage() {
+        const race = document.getElementById('race-sel').value;
+        const actorSel = document.getElementById('actor-sel');
+        const poseSel = document.getElementById('pose-sel');
+        const currentSelectedActor = actorSel.value; // 记住当前选中的值
+
+        actorSel.innerHTML = '<option value="">--演员--</option>';
+        poseSel.innerHTML = '<option value="">--先选演员--</option>';
+
+        globalConfig.actors.filter(a => a.race_name === race).forEach(a => {
+            const opt = document.createElement('option');
+            opt.value = a.name;
+            opt.innerText = a.name;
+            actorSel.appendChild(opt);
+        });
+
+        // 尝试恢复之前的选中（如果是刚添加的，外部逻辑会控制选中）
+        if (currentSelectedActor) actorSel.value = currentSelectedActor;
+    }
+
+    function fillSelect(el, data, def) {
+        el.innerHTML = `<option value="">${def}</option>`;
+        data.forEach(i => { const opt = document.createElement('option'); opt.value = i.name; opt.innerText = i.name; el.appendChild(opt); });
+    }
+    /**
+ * 快进或后退指定的秒数
+ * @param {number} seconds 秒数，负数为后退，正数为快进
+ */
+// 修改后的 skipTime
+function skipTime(seconds) {
+    if (!video) return;
+
+    // 如果间隔很久才操作，先结算之前的
+    if (Date.now() - lastInteractionTime > 5000) {
+        logDebug("间隔操作，尝试结算旧片段...");
+        checkAndAutoSave();
+    }
+
+    if (seconds < 0) {
+        // 往回跳找开头
+        autoSegmentStart = Math.max(0, video.currentTime + seconds);
+        logDebug(`回退操作: 新起点设为 ${formatTime(autoSegmentStart)}`);
+        updateDebug('db-start', formatTime(autoSegmentStart));
+    }
+
+    video.currentTime = Math.max(0, Math.min(video.duration, video.currentTime + seconds));
+    lastInteractionTime = Date.now();
+}
+
+// 检查是否符合自动保存条件
+function checkAndAutoSave() {
+    if (autoSegmentStart === null) {
+        logDebug("跳过检查：无计时起点");
+        return;
+    }
+
+    const currentPos = video.currentTime;
+    const duration = currentPos - autoSegmentStart;
+     // 设定阈值：最少10秒，最多180秒（3分钟）
+    const MIN_TIME = 10;
+    const MAX_TIME = 180; 
+
+
+    logDebug(`检查片段: ${formatTime(autoSegmentStart)} -> ${formatTime(currentPos)} (时长: ${Math.round(duration)}s)`);
+
+    if (autoSegmentStart > 0 && duration >= MIN_TIME && duration <= MAX_TIME) {
+        logDebug(`✅ 记录符合条件: ${Math.round(duration)}s`);
+        silentAutoSave(autoSegmentStart, currentPos);
+    } else if (autoSegmentStart <= 0) {
+        logDebug("提示：跳过视频开头的自动保存 (起点为0)");
+    } else if (duration > MAX_TIME) {
+        logDebug(`❌ 自动跳过：时长 ${Math.round(duration)}s 超过3分钟`);
+    }
+
+    // 重置起点
+    autoSegmentStart = currentPos;
+    updateDebug('db-start', formatTime(autoSegmentStart));
+}
+
+// 修改进度条点击逻辑
+/**
+ * 修改进度条点击逻辑
+ */
+// 找到进度条元素
+const progressBar = document.getElementById('progress-bar');
+
+if (progressBar) {
+    // 确保只有一个 onclick 绑定，覆盖掉之前的
+    progressBar.onclick = (e) => {
+        // --- 核心修复：第一步，立刻锁定“跳跃前”的坐标 ---
+        const timeBeforeJump = video.currentTime; 
+        
+        // --- 第二步：计算跳转前的“真实观看时长” ---
+        const realWatchDuration = timeBeforeJump - autoSegmentStart;
+
+        logDebug(`检测到跳转！跳转前：${formatTime(timeBeforeJump)}，已看：${Math.round(realWatchDuration)}s`);
+
+        // --- 第三步：结算旧片段（使用跳转前的时间点） ---
+        // 只有真实看过的时长符合 10s-600s 才存
+        if (realWatchDuration >= 10 && realWatchDuration <= 600) {
+            logDebug("✅ 时长符合，保存跳转前的精彩片段...");
+            silentAutoSave(autoSegmentStart, timeBeforeJump);
+        } else {
+            logDebug(`跳过保存：跳转前观看时长(${Math.round(realWatchDuration)}s)不符合条件`);
+        }
+
+        // --- 第四步：计算跳转的目标时间 ---
+        const rect = progressBar.getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+        const targetTime = (clickX / rect.width) * video.duration;
+
+        // --- 第五步：执行视频跳转 ---
+        video.currentTime = targetTime;
+
+        // --- 第六步：强制重置计时起点为“跳转后”的位置 ---
+        autoSegmentStart = targetTime; 
+        
+        logDebug(`🚀 已跳转至 ${formatTime(targetTime)}，新计时从此处开始`);
+        
+        // 更新调试面板显示
+        updateDebug('db-start', formatTime(autoSegmentStart));
+        lastInteractionTime = Date.now();
+    };
+}
+
+/**
+ * 调用后端接口打开本地文件
+ */
+async function openLocal(filePath, event) {
+    if (event) event.stopPropagation(); // 防止触发侧边栏的选中事件
+
+    try {
+        const res = await fetch(`${API}/api/open-local`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: filePath })
+        }).then(r => r.json());
+
+        if (!res.success) {
+            alert("打开失败: " + res.message);
+        }
+    } catch (e) {
+        alert("无法连接服务器");
+    }
+}
+  function updatePoseLinkage() {
+        const actor = document.getElementById('actor-sel').value;
+        const poseSel = document.getElementById('pose-sel');
+        const currentSelectedPose = poseSel.value;
+
+        poseSel.innerHTML = '<option value="">--姿势--</option>';
+        
+        globalConfig.poses.filter(p => p.actor_name === actor).forEach(p => {
+            const opt = document.createElement('option');
+            opt.value = p.name;
+            opt.innerText = p.name;
+            poseSel.appendChild(opt);
+        });
+
+        if (currentSelectedPose) poseSel.value = currentSelectedPose;
+        showPosePreview(); 
+    }
+    /**
+ * 修改视频播放倍速
+ * @param {number} rate 倍率 (0.5, 1, 2)
+ * @param {HTMLElement} btn 点击的按钮元素，用于更新样式
+ */
+function changeSpeed(rate, btn) {
+    if (!video) return;
+    
+    // 1. 设置视频播放速率
+    video.playbackRate = rate;
+    
+    // 2. 清除所有倍速按钮的激活状态
+    document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+    
+    // 3. 激活当前点击的按钮
+    if (btn) {
+        btn.classList.add('active');
+    }
+    
+    console.log("当前速率:", video.playbackRate);
+}
+/**
+ * 调用后端开始转码
+ */
+async function startConvert(path) {
+    const statusDiv = document.getElementById('convert-status');
+    statusDiv.innerText = "正在请求转码...";
+    
+    try {
+        const res = await fetch(`${API}/api/convert-to-mp4`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: path })
+        }).then(r => r.json());
+
+        if (res.success) {
+            statusDiv.innerHTML = `<span style="color:var(--green)">任务已启动！</span> 5060 正在全力全速转码中，请 2-5 分钟后刷新列表。`;
+        }
+    } catch (e) {
+        statusDiv.innerText = "任务启动失败，请检查后端。";
+    }
+}
+
+ function togglePlay() { 
+    if (video.paused) {
+        video.play();
+        document.getElementById('play-btn').innerText = '暂停';
+    } else {
+        video.pause();
+        document.getElementById('play-btn').innerText = '播放';
+    }
+}
+  // 统一使用 addEventListener
+video.addEventListener('play', () => {
+    const btn = document.getElementById('play-btn');
+    if (btn) btn.innerText = '暂停';
+});
+
+video.addEventListener('pause', () => {
+    const btn = document.getElementById('play-btn');
+    if (btn) btn.innerText = '播放';
+});
+    video.ontimeupdate = () => {
+        if(!video.duration) return;
+        document.getElementById('progress-fill').style.width = (video.currentTime / video.duration * 100) + '%';
+        document.getElementById('time-text').innerText = `${formatTime(video.currentTime)} / ${formatTime(video.duration)}`;
+    };
+  
+    function formatTime(s) { const m = Math.floor(s / 60); const sec = Math.floor(s % 60); return `${m}:${sec.toString().padStart(2, '0')}`; }
+    window.onfocus = function() {
+    if (currentVideo) {
+        console.log("检测到窗口激活，正在同步标记数据...");
+        loadMarkers();
+    }
+};
+</script>
+</body>
+</html>

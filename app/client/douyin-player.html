@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>抖音模式 - 沉浸播放</title>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <style>
+        body { margin: 0; background: #000; color: #fff; font-family: sans-serif; overflow: hidden; }
+        .container { width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; position: relative; }
+        
+        video { max-width: 100%; max-height: 100%; box-shadow: 0 0 50px rgba(0,0,0,0.5); }
+
+        /* 右侧信息叠加层 */
+        .overlay {
+            position: absolute; bottom: 40px; left: 30px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            pointer-events: none;
+            z-index: 10;
+        }
+        .actor-name { font-size: 24px; font-weight: bold; color: #ff0050; margin-bottom: 10px; }
+        .pose-name { font-size: 18px; color: #fff; margin-bottom: 5px; }
+        .time-display { font-size: 14px; color: rgba(255,255,255,0.6); font-family: monospace; }
+        
+        /* 播放进度指示器 - 改为可点击 */
+        .top-bar { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 6px; 
+            background: rgba(255,255,255,0.1); cursor: pointer; z-index: 20;
+        }
+        #progress { height: 100%; background: #ff0050; width: 0%; transition: width 0.1s linear; }
+
+        /* 右侧控制提示 */
+        .hint {
+            position: absolute; right: 20px; top: 50%; transform: translateY(-50%);
+            display: flex; flex-direction: column; gap: 20px; color: rgba(255,255,255,0.3);
+            font-size: 12px; text-align: center; z-index: 10;
+        }
+        .key-tag { border: 1px solid #333; padding: 5px; border-radius: 4px; color: #aaa; }
+        
+        .like-btn {
+            font-size: 40px;
+            color: rgba(255,255,255,0.3);
+            cursor: pointer;
+            transition: 0.3s;
+            pointer-events: auto; /* 确保心形可以点击 */
+        }
+        .like-btn.active {
+            color: #ff0050;
+            transform: scale(1.2);
+            text-shadow: 0 0 20px rgba(255, 0, 80, 0.6);
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <!-- 进度条容器，添加点击事件 -->
+    <div class="top-bar" id="progress-container">
+        <div id="progress"></div>
+    </div>
+    
+    <video id="v-player" playsinline></video>
+
+    <div class="overlay">
+        <div id="v-actor" class="actor-name">@加载中...</div>
+        <div id="v-pose" class="pose-name">精彩片段即将开始</div>
+        <!-- 新增时间显示 -->
+        <div id="v-time" class="time-display">00:00 / 00:00</div>
+    </div>
+
+    <div class="hint">
+         <div id="like-icon" class="like-btn" onclick="toggleLike()">❤</div>
+        <div><div class="key-tag">↑</div> 切换上段</div>
+        <div><div class="key-tag">↓</div> 切换下段</div>
+        <div><div class="key-tag">空格</div> 暂停/播放</div>
+        <div><div class="key-tag">L</div> 喜欢</div>
+        <div id="cur-index">0 / 0</div>
+    </div>
+</div>
+
+<script>
+    const API = "http://localhost:3000";
+    let playlist = JSON.parse(localStorage.getItem('douyin_playlist') || '[]');
+    let currentIndex = 0;
+    let hls = null;
+    const video = document.getElementById('v-player');
+    const progressBar = document.getElementById('progress');
+    const progressContainer = document.getElementById('progress-container');
+    const timeDisplay = document.getElementById('v-time');
+
+    // 工具函数：秒转 00:00 格式
+    function formatTime(seconds) {
+        if (isNaN(seconds)) return "00:00";
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+
+    function playClip(index) {
+        if (index < 0 || index >= playlist.length) return;
+        currentIndex = index;
+        const clip = playlist[index];
+        
+        // 更新 UI 状态
+        const likeIcon = document.getElementById('like-icon');
+        likeIcon.classList.toggle('active', !!clip.is_favorite);
+        
+        document.getElementById('v-actor').innerText = `@${clip.actor}`;
+        document.getElementById('v-pose').innerText = clip.pose;
+        document.getElementById('cur-index').innerText = `${index + 1} / ${playlist.length}`;
+        progressBar.style.width = '0%';
+        timeDisplay.innerText = `00:00 / ${formatTime(clip.end - clip.start)}`;
+
+        // 清理旧实例
+        if (hls) { hls.destroy(); hls = null; }
+        video.pause();
+
+        // 播放逻辑
+        if (clip.type === 'm3u8') {
+            if (Hls.isSupported()) {
+                hls = new Hls();
+                hls.loadSource(clip.url);
+                hls.attachMedia(video);
+                hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                    video.currentTime = clip.start;
+                    video.play();
+                });
+            }
+        } else {
+            video.src = clip.url;
+            video.onloadedmetadata = () => {
+                video.currentTime = clip.start;
+                video.play();
+            };
+        }
+    }
+
+    // 监听时间更新
+    video.ontimeupdate = () => {
+        const clip = playlist[currentIndex];
+        if (!clip) return;
+
+        // 计算片段内的相对时间
+        const played = video.currentTime - clip.start;
+        const total = clip.end - clip.start;
+        
+        // 更新进度条
+        const percent = Math.min(100, Math.max(0, (played / total) * 100));
+        progressBar.style.width = percent + '%';
+
+        // 更新时间文字
+        timeDisplay.innerText = `${formatTime(played)} / ${formatTime(total)}`;
+
+        // 自动下一集逻辑
+        if (video.currentTime >= clip.end) {
+            if (currentIndex < playlist.length - 1) {
+                playClip(currentIndex + 1);
+            } else {
+                playClip(0);
+            }
+        }
+    };
+
+    // 进度条点击跳转逻辑
+    progressContainer.addEventListener('click', (e) => {
+        const clip = playlist[currentIndex];
+        if (!clip) return;
+
+        const rect = progressContainer.getBoundingClientRect();
+        const pos = (e.clientX - rect.left) / rect.width; // 点击位置百分比
+        const total = clip.end - clip.start;
+        
+        // 计算新的播放时间点
+        video.currentTime = clip.start + (total * pos);
+    });
+
+    // 键盘交互
+    document.addEventListener('keydown', (e) => {
+        const key = e.key.toLowerCase();
+        if (key === 'l') toggleLike();
+        if (e.key === 'ArrowDown') playClip(currentIndex + 1);
+        if (e.key === 'ArrowUp') playClip(currentIndex - 1);
+        if (e.key === ' ') {
+            e.preventDefault();
+            video.paused ? video.play() : video.pause();
+        }
+    });
+
+    // 核心函数：切换喜欢状态
+    async function toggleLike() {
+        const clip = playlist[currentIndex];
+        const newStatus = clip.is_favorite ? 0 : 1;
+        
+        try {
+            const url = `${API}/api/markers/${clip.id}/favorite`;
+            const res = await fetch(url, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ is_favorite: newStatus })
+            });
+
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+            const data = await res.json();
+            if (data.success) {
+                clip.is_favorite = newStatus;
+                document.getElementById('like-icon').classList.toggle('active', !!newStatus);
+                console.log("更新成功");
+            }
+        } catch (e) { 
+            console.error("操作失败", e); 
+            alert("操作失败: " + e.message);
+        }
+    }
+
+    // 初始播放
+    if (playlist.length > 0) {
+        playClip(0);
+    } else {
+        alert("播放列表为空，请返回重新选择");
+    }
+</script>
+</body>
+</html>

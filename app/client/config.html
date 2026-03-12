@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>配置管理 - 视频标记系统</title>
+    <style>
+:root {
+    --bg: #121212;
+    --panel: #1b1b1b;
+    --panel-light: #222;
+    --accent: #4a90e2;
+    --danger: #ff4d4f;
+    --text: #eaeaea;
+    --muted: #777;
+}
+
+body {
+    font-family: 'PingFang SC', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 40px;
+    margin: 0;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+/* ================= HEADER ================= */
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 40px;
+    border-bottom: 1px solid #2a2a2a;
+    padding-bottom: 20px;
+}
+
+.header h1 {
+    margin: 0;
+    font-weight: 600;
+}
+
+.back-btn {
+    text-decoration: none;
+    color: #aaa;
+    background: #2a2a2a;
+    padding: 10px 20px;
+    border-radius: 6px;
+    transition: 0.2s;
+}
+
+.back-btn:hover {
+    background: var(--accent);
+    color: #fff;
+}
+
+/* ================= GRID ================= */
+
+.config-grid {
+    display: grid;
+    /* 核心修复：minmax(0, 1fr) 防止被子元素横向撑开 */
+    grid-template-columns: 350px minmax(0, 1fr); 
+    gap: 30px;
+    align-items: start;
+}
+.left-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+.main-workspace {
+    position: sticky;
+    top: 20px;
+    /* 核心修复：确保容器不会超出 grid 分配的空间 */
+    min-width: 0; 
+    width: 100%;
+}
+/* 调整卡片内部高度，让姿势区域更高 */
+.main-workspace .list-container {
+    max-height: 70vh; /* 姿势列表可以占屏幕高度的 70% */
+}
+
+/* 让侧边栏列表短一些，保持紧凑 */
+.left-sidebar .list-container {
+    max-height: 250px;
+}
+
+/* 针对移动端的适配 */
+@media (max-width: 900px) {
+    .config-grid {
+        grid-template-columns: 1fr;
+    }
+    .main-workspace {
+        position: static;
+    }
+}
+/* ================= CARD ================= */
+
+.card {
+    background: var(--panel);
+    padding: 25px;
+    border-radius: 14px;
+    border: 1px solid #2a2a2a;
+    display: flex;
+    flex-direction: column;
+}
+
+.card h3 {
+    margin-top: 0;
+    margin-bottom: 20px;
+    color: var(--accent);
+    font-weight: 600;
+}
+
+/* ================= LIST ================= */
+
+.list-container {
+    flex: 1;
+    max-height: 420px;
+    overflow-y: auto;
+    margin-bottom: 20px;
+    background: var(--panel-light);
+    border-radius: 8px;
+    padding: 10px;
+}
+
+/* 单条 */
+.item {
+    background: #1f1f1f;
+    border: 1px solid #2f2f2f;
+    border-radius: 10px;
+    padding: 12px 15px;
+    margin-bottom: 12px;
+    /* 核心修复：强制限制宽度为父级的 100% */
+    width: 100%;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* 防止溢出内容干扰布局 */
+}
+
+
+.item:hover {
+    background: #242424;
+    border-color: #3a3a3a;
+}
+
+.item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.del-x {
+    color: var(--danger);
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 16px;
+    transition: 0.2s;
+}
+
+.del-x:hover {
+    transform: scale(1.2);
+}
+
+/* ================= INPUT AREA ================= */
+
+.input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+input, select {
+    padding: 10px 12px;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    color: #fff;
+    border-radius: 6px;
+    outline: none;
+    transition: 0.2s;
+}
+
+input:focus,
+select:focus {
+    border-color: var(--accent);
+}
+
+button {
+    padding: 10px;
+    background: var(--accent);
+    border: none;
+    color: #fff;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: 0.2s;
+}
+
+button:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+}
+
+/* ================= POSE THUMBS ================= */
+
+.pose-thumbs-container {
+    display: flex;
+    gap: 10px;
+    overflow-x: auto; /* 开启横向滚动 */
+    padding-top: 12px;
+    padding-bottom: 8px;
+    width: 100%;      /* 占据整行宽度 */
+    /* 核心修复：防止作为 flex 子项时尝试撑开父级 */
+    min-width: 0; 
+}
+
+.pose-thumbs-container::-webkit-scrollbar {
+    height: 6px;
+}
+
+.pose-thumbs-container::-webkit-scrollbar-track {
+    background: #111;
+}
+
+.pose-thumbs-container::-webkit-scrollbar-thumb {
+    background: #444;
+    border-radius: 4px;
+}
+
+.pose-thumbs-container::-webkit-scrollbar-thumb:hover {
+    background: var(--accent);
+}
+
+.pose-thumbs-container img {
+    height: 85px;
+    aspect-ratio: 16/9;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid #333;
+    /* 核心修复：禁止图片因为空间不足而缩小宽度 */
+    flex-shrink: 0; 
+    cursor: pointer;
+}
+
+.pose-thumbs-container img:hover {
+    transform: scale(1.05);
+    border-color: var(--accent);
+}
+
+.no-thumbs {
+    font-size: 12px;
+    color: var(--muted);
+    padding-top: 10px;
+}
+
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h1>⚙ 数据字典管理</h1>
+        <a href="index.html" class="back-btn">← 返回播放器</a>
+    </div>
+
+    <div class="config-grid">
+        <!-- 左侧：Race / Actor 结构区 -->
+        <div class="left-sidebar">
+            
+            <!-- 人种管理卡片 -->
+            <div class="card">
+                <h3>1. 人种管理 (Race)</h3>
+                <div id="race-list" class="list-container"></div>
+                <div class="input-group">
+                    <input type="text" id="new-race" placeholder="输入新人种...">
+                    <button onclick="add('races')">添加人种</button>
+                </div>
+            </div>
+
+            <!-- 演员管理卡片 -->
+            <div class="card">
+                <h3>2. 演员管理 (Actor)</h3>
+                <div id="actor-list" class="list-container"></div>
+                <div class="input-group">
+                    <select id="race-belong"></select>
+                    <input type="text" id="new-actor" placeholder="输入新演员名字...">
+                    <button onclick="add('actors')">添加演员</button>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- 右侧：Pose 核心工作区 -->
+      <!-- 右侧：Pose 核心工作区 -->
+<div class="main-workspace">
+    <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 style="margin: 0;">3. 姿势管理 (Pose)</h3>
+            <div style="font-size: 12px; color: var(--muted);">匹配: <span id="match-count" style="color: var(--accent);">0</span></div>
+        </div>
+        
+        <!-- 筛选栏 -->
+        <div class="input-group" style="background: #252525; padding: 15px; border-radius: 10px; margin-bottom: 20px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <select id="pose-race-link" onchange="updatePoseActorLink(); filterPoseList();">
+                    <!-- 初始值设为 --请选择人种-- -->
+                </select>
+                <select id="pose-actor-link" onchange="filterPoseList()">
+                    <option value="">--请选择演员--</option>
+                </select>
+            </div>
+            <div style="display: flex; gap: 10px; margin-top:10px;">
+                <input type="text" id="new-pose" placeholder="输入新姿势名称..." style="flex: 1;">
+                <button onclick="add('poses')" style="width: 100px;">添加</button>
+            </div>
+        </div>
+
+        <!-- 列表容器 -->
+        <div id="pose-list" class="list-container" style="max-height: 65vh;">
+            <!-- 初始提示会由 JS 插入 -->
+        </div>
+    </div>
+</div>
+    </div>
+</div>
+
+<script>
+    const API = 'http://localhost:3000';
+
+  async function load() {
+    const res = await fetch(`${API}/api/config`).then(r => r.json());
+    window.allConfig = res; 
+
+    // 填充人种下拉框
+    const raceBelong = document.getElementById('race-belong');
+    const poseRaceLink = document.getElementById('pose-race-link');
+    raceBelong.innerHTML = '<option value="">-- 全部人种 --</option>';
+    poseRaceLink.innerHTML = '<option value="">-- 全部人种 --</option>';
+    
+    res.races.forEach(r => {
+        const opt = `<option value="${r.name}">${r.name}</option>`;
+        raceBelong.innerHTML += opt;
+        poseRaceLink.innerHTML += opt;
+    });
+
+    // 渲染三个列表 (初始状态：姿势列表显示全部，或者你可以设为空)
+    render('race-list', res.races, 'races');
+    render('actor-list', res.actors, 'actors');
+    
+    // 初始执行一次过滤（默认全部）
+    filterPoseList(); 
+}
+
+   /**
+ * 姿势列表过滤逻辑 - 修改版
+ */
+function filterPoseList() {
+    const selectedRace = document.getElementById('pose-race-link').value;
+    const selectedActor = document.getElementById('pose-actor-link').value;
+    const poseListContainer = document.getElementById('pose-list');
+    const matchCountLabel = document.getElementById('match-count');
+
+    if (!window.allConfig) return;
+
+    // --- 核心逻辑修改：判断是否已选择 ---
+    if (!selectedRace || !selectedActor) {
+        // 如果未选全，显示提示文字并清空列表
+        poseListContainer.innerHTML = `
+            <div style="padding: 40px; text-align: center; color: #555;">
+                <p>请先在上方选择【人种】和【演员】</p>
+                <p style="font-size: 12px;">选定具体演员后，此处将加载其专属姿势库</p>
+            </div>
+        `;
+        if(matchCountLabel) matchCountLabel.innerText = "0";
+        return;
+    }
+
+    // --- 执行精确过滤 ---
+    // 逻辑：此时 selectedActor 已经有了，直接找对应演员的姿势
+    const filteredData = window.allConfig.poses.filter(p => p.actor_name === selectedActor);
+
+    // 更新数量统计
+    if(matchCountLabel) matchCountLabel.innerText = filteredData.length;
+
+    // 执行渲染
+    if (filteredData.length > 0) {
+        render('pose-list', filteredData, 'poses');
+    } else {
+        poseListContainer.innerHTML = `
+            <div style="padding: 40px; text-align: center; color: #555;">
+                <p>该演员暂无登记姿势</p>
+                <button onclick="document.getElementById('new-pose').focus()" 
+                        style="background:none; border:1px solid #444; color:#888; padding:5px 10px; cursor:pointer; border-radius:4px;">
+                        立即添加第一个姿势
+                </button>
+            </div>
+        `;
+    }
+}
+
+  // 修改后的渲染函数
+    // 修改后的渲染函数
+    function render(id, data, cat) {
+        const cont = document.getElementById(id);
+        cont.innerHTML = '';
+        
+        data.forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'item';
+            
+            if (cat === 'poses') {
+                // 1. 获取层级关系
+                const parentActor = window.allConfig.actors.find(a => a.name === item.actor_name);
+                const raceName = parentActor ? parentActor.race_name : '未知';
+                const actorName = item.actor_name || '未知';
+                
+                // 2. 组装 ID
+                const thumbId = `thumbs-${item.id}`;
+
+                // 3. 构建 HTML (Race-Actor-Pose 结构)
+                div.innerHTML = `
+                    <div class="item-header">
+                        <span style="font-size:14px;">
+                            <span style="color:#666">${raceName} - </span>
+                            <span style="color:var(--accent)">${actorName} - </span>
+                            <b>${item.name}</b>
+                        </span>
+                        <span class="del-x" onclick="remove('${cat}', ${item.id})" style="color:red; cursor:pointer;">×</span>
+                    </div>
+                    <!-- 横向滑动容器 -->
+                    <div class="pose-thumbs-container" id="${thumbId}">
+                        <span style="color:#444; font-size:12px;">正在加载参考图...</span>
+                    </div>
+                `;
+                
+                // 4. 异步加载图片
+                fetchThumbnailsForItem(item.actor_name, item.name, thumbId);
+
+            } else {
+                // 人种和演员的普通渲染逻辑
+                let displayName = item.name;
+                if (cat === 'actors') displayName = `<small style="color:#666">${item.race_name}-</small>${item.name}`;
+                
+                div.innerHTML = `
+                    <div class="item-header">
+                        <span>${displayName}</span>
+                        <span class="del-x" onclick="remove('${cat}', ${item.id})">×</span>
+                    </div>
+                `;
+            }
+            cont.appendChild(div);
+        });
+    }
+
+    /**
+     * 为列表项异步获取并填充缩略图
+     */
+  async function fetchThumbnailsForItem(actor, pose, containerId) {
+        try {
+            const res = await fetch(`${API}/api/pose-preview?actor=${encodeURIComponent(actor)}&pose=${encodeURIComponent(pose)}`).then(r => r.json());
+            const container = document.getElementById(containerId);
+            if (!container) return;
+
+            if (res.success && res.data.length > 0) {
+                container.innerHTML = ''; // 清空加载提示
+                res.data.forEach(m => {
+                    const img = document.createElement('img');
+                    img.src = m.thumbnail;
+                    img.title = "点击查看大图";
+                    img.onclick = () => window.open(m.thumbnail);
+                    container.appendChild(img);
+                });
+            } else {
+                container.innerHTML = '<div class="no-thumbs">暂无历史参考图</div>';
+            }
+        } catch (e) {
+            console.error("加载参考图失败", e);
+        }
+    }
+     // 联动函数：在配置页添加姿势时，根据人种选演员
+function updatePoseActorLink() {
+    const race = document.getElementById('pose-race-link').value;
+    const sel = document.getElementById('pose-actor-link');
+    sel.innerHTML = '<option value="">-- 全部演员 --</option>';
+    
+    if (window.allConfig && window.allConfig.actors) {
+        window.allConfig.actors
+            .filter(a => a.race_name === race)
+            .forEach(a => {
+                sel.innerHTML += `<option value="${a.name}">${a.name}</option>`;
+            });
+    }
+}
+
+   async function add(cat) {
+        let payload = {};
+        
+        // 人种和姿势逻辑保持不变
+        if(cat === 'races') payload.name = document.getElementById('new-race').value.trim();
+       if(cat === 'poses') {
+            payload.name = document.getElementById('new-pose').value;
+            payload.actor_name = document.getElementById('pose-actor-link').value;
+            if(!payload.actor_name) return alert("请先选择所属演员");
+        }
+        
+        // 核心修改：管理演员的逻辑
+        if(cat === 'actors') {
+            let actorName = document.getElementById('new-actor').value.trim();
+            let raceName = document.getElementById('race-belong').value;
+            
+            if(!raceName) return alert("请先选择所属人种");
+            if(!actorName) return alert("请输入演员名字");
+
+            // 【新逻辑】如果名字输入的是 "未知"，则自动拼装成 "未知（人种）"
+            // 比如：未知 + 日韩 -> 未知（日韩）
+            if (actorName === "未知") {
+                actorName = `未知（${raceName}）`;
+            }
+
+            payload.name = actorName;
+            payload.race_name = raceName;
+        }
+
+        if(!payload.name) return;
+
+        // 发送给后端
+        const response = await fetch(`${API}/api/config/${cat}`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        
+        const result = await response.json();
+        if(!result.success) {
+            alert(result.message || "添加失败，可能名字已存在");
+            return;
+        }
+        
+        // 清空输入框并刷新列表
+        if(cat==='races') document.getElementById('new-race').value = '';
+        if(cat==='poses') document.getElementById('new-pose').value = '';
+        if(cat==='actors') document.getElementById('new-actor').value = '';
+        load();
+    }
+
+    async function remove(cat, id) {
+        if(!confirm("确定删除？")) return;
+        await fetch(`${API}/api/config/${cat}/${id}`, { method: 'DELETE' });
+        load();
+    }
+
+    window.onload = load;
+</script>
+
+</body>
+</html>

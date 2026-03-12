@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head><title>HLS Player</title></head>
+<body>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <video id="video" controls style="width: 100%; max-width: 800px;"></video>
+    <script>
+      var video = document.getElementById('video');
+      var m3u8Url = 'https://surrit.com/e0712563-483a-4088-a878-2d891689c3a6/1080p/video.m3u8'; // 替换成你的地址
+      if (Hls.isSupported()) {
+        var hls = new Hls();
+        hls.loadSource(m3u8Url);
+        hls.attachMedia(video);
+      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = m3u8Url;
+      }
+    </script>
+</body>
+</html>

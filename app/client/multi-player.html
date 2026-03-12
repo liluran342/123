@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>多路视频播放墙 - 视频预览版</title>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <style>
+        :root { 
+            --bg: #000; 
+            --accent: #3498db; 
+            --segment-color: #f1c40f; 
+            --segment-hover: #ff9f43;
+        }
+        body { margin: 0; background: var(--bg); color: #fff; font-family: sans-serif; overflow: hidden; }
+        
+        #player-grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fill, minmax(32%, 1fr)); 
+            gap: 15px; padding: 15px; height: 100vh; box-sizing: border-box; 
+            align-content: flex-start; overflow-y: auto;
+        }
+
+        .player-unit { 
+            background: #111; position: relative; border-radius: 8px; overflow: hidden;
+            border: 1px solid #333; display: flex; flex-direction: column;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+
+        .video-box { position: relative; width: 100%; aspect-ratio: 16/9; background: #000; }
+        video { width: 100%; height: 100%; display: block; cursor: pointer; }
+
+        .player-controls { background: #1a1a1a; padding: 8px 12px; }
+        
+        /* 进度条样式 */
+        .mini-progress-wrapper { 
+            position: relative; height: 14px; background: #333; 
+            cursor: pointer; border-radius: 4px; margin: 5px 0; overflow: hidden;
+        }
+        .mini-progress-fill { 
+            position: absolute; top:0; left:0; height: 100%; 
+            background: var(--accent); width: 0%; z-index: 1; pointer-events: none; opacity: 0.8;
+        }
+        .mini-segments-layer { position: absolute; top:0; left:0; width: 100%; height: 100%; z-index: 5; pointer-events: none; }
+        
+        /* 黄色标记段 */
+        .mini-segment { 
+            position: absolute; height: 100%; background: var(--segment-color); 
+            border-left: 1px solid #fff; border-right: 1px solid #fff;
+            box-sizing: border-box; cursor: pointer; pointer-events: auto; opacity: 0.9;
+        }
+
+        /* --- 核心：悬浮预览窗样式 --- */
+        .thumb-preview {
+            position: absolute; bottom: 60px; left: 50%; transform: translateX(-50%);
+            width: 180px; border: 2px solid var(--accent); border-radius: 6px;
+            display: none; background: #000; z-index: 100; pointer-events: none;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.9);
+            overflow: hidden;
+        }
+        .thumb-preview video, .thumb-preview img { width: 100%; display: block; aspect-ratio: 16/9; object-fit: cover; }
+        .thumb-preview .desc { font-size: 10px; padding: 5px; text-align: center; background: #111; color: #eee; line-height: 1.2; }
+
+        /* 按钮与标签 */
+        .top-btns { position: absolute; top: 8px; right: 8px; display: flex; gap: 5px; z-index: 20; }
+        .action-btn { border: none; color: #fff; border-radius: 4px; cursor: pointer; padding: 4px 10px; font-size: 11px; font-weight: bold; }
+        .tag-btn { background: #27ae60; }
+        .vol-btn { background: rgba(52, 152, 219, 0.9); }
+        .close-btn { background: rgba(231, 76, 60, 0.9); }
+
+        .v-label { font-size: 12px; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 4px; }
+        .empty-hint { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); color: #444; }
+        .player-unit {
+    /* ... 现有样式 ... */
+    overflow: visible; /* 【重要】允许预览窗弹出到单元格外面 */
+}
+
+.video-box {
+    /* ... 现有样式 ... */
+    position: relative;
+    overflow: visible; /* 确保不裁剪 */
+}
+
+.thumb-preview {
+    position: absolute;
+    bottom: 60px;
+    /* 移除之前的 left: 50%，改由 JS 动态设置 */
+    width: 180px;
+    background: #1a1a1a;
+    border: 2px solid var(--accent);
+    border-radius: 6px;
+    z-index: 1000; /* 提高层级 */
+    pointer-events: none;
+    transform: translateX(-50%); /* 保持中心对齐基准 */
+    box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+}
+    </style>
+</head>
+<body>
+
+<div id="player-grid">
+    <div class="empty-hint" id="empty-hint"><h2>等待选择视频...</h2></div>
+</div>
+
+<script>
+    const API = 'http://localhost:3000';
+    const bc = new BroadcastChannel('video_multi_stream');
+    const grid = document.getElementById('player-grid');
+    const hint = document.getElementById('empty-hint');
+    const hlsInstances = {}; 
+
+    function getSafeId(path) { return "v_" + btoa(encodeURIComponent(path)).replace(/=/g, ''); }
+    function formatTime(s) { const m=Math.floor(s/60); const sec=Math.floor(s%60); return `${m}:${sec.toString().padStart(2,'0')}`; }
+
+    bc.onmessage = (e) => {
+        const { type, video, path } = e.data;
+        if (type === 'ADD') addPlayer(video);
+        if (type === 'REMOVE') removePlayer(path);
+        if (type === 'REQUEST_INITIAL_STATE') {}
+    };
+
+async function addPlayer(vData) {
+        // 使用 vData.path (可能是路径，也可能是 seg_id) 作为唯一 ID
+        const safeId = getSafeId(vData.path);
+        if (document.getElementById(safeId)) return;
+        
+        hint.style.display = 'none';
+
+        // 获取标记数据（如果是片段模式，vData.realPath 才是真实文件路径）
+        const searchPath = vData.realPath || vData.path;
+        const mRes = await fetch(`${API}/api/markers?path=${encodeURIComponent(searchPath)}`).then(r => r.json());
+        const markers = mRes.data;
+
+        const unit = document.createElement('div');
+        unit.className = 'player-unit';
+        unit.id = safeId;
+        const escapedPath = vData.path.replace(/\\/g, '\\\\'); 
+
+        unit.innerHTML = `
+            <div class="video-box">
+                <div class="top-btns">
+                    <button class="action-btn tag-btn" onclick="jumpToTag('${escapedPath}')">标记</button>
+                    <button class="action-btn vol-btn" id="vol-${safeId}" onclick="toggleMute('${escapedPath}')">🔇</button>
+                    <button class="action-btn close-btn" onclick="manualRemove('${escapedPath}')">关闭</button>
+                </div>
+                <video playsinline onclick="this.paused ? this.play() : this.pause()"></video>
+                <div class="thumb-preview" id="preview-${safeId}"></div>
+            </div>
+            <div class="player-controls">
+                <div class="mini-progress-wrapper" onclick="seekVideo(event, '${safeId}')">
+                    <div class="mini-progress-fill" id="fill-${safeId}"></div>
+                    <div class="mini-segments-layer" id="segments-${safeId}"></div>
+                </div>
+                <div class="v-label">${vData.name}</div>
+            </div>
+        `;
+        
+        grid.appendChild(unit);
+        const videoEl = unit.querySelector('video');
+
+        // 【关键修复】处理片段跳转
+       // 1. 监听元数据加载 (处理初始跳转)
+        videoEl.onloadedmetadata = () => {
+            renderSegmentsOnBar(safeId, markers, videoEl.duration);
+            if (vData.startTime) {
+                videoEl.currentTime = vData.startTime;
+            }
+        };
+
+       videoEl.ontimeupdate = () => {
+            if (!videoEl.duration) return;
+
+            // 更新进度条 UI (原有逻辑)
+            const p = (videoEl.currentTime / videoEl.duration * 100) + '%';
+            document.getElementById(`fill-${safeId}`).style.width = p;
+
+            // --- 新增：片段循环检测 ---
+            // 如果存在结束时间，并且当前播放时间已经超过了结束时间
+            if (vData.endTime && vData.endTime > 0) {
+                if (videoEl.currentTime >= vData.endTime) {
+                    console.log(`[循环] ID:${safeId} 到达终点 ${vData.endTime}s，跳回起点 ${vData.startTime}s`);
+                    videoEl.currentTime = vData.startTime;
+                    videoEl.play(); // 确保继续播放
+                }
+            }
+        };
+
+        if (vData.type === 'm3u8') {
+            if (Hls.isSupported()) {
+                const hls = new Hls(); hls.loadSource(vData.url); hls.attachMedia(videoEl);
+                hlsInstances[vData.path] = hls;
+            }
+        } else {
+            videoEl.src = vData.url;
+        }
+
+        videoEl.muted = true;
+        videoEl.play().catch(() => {});
+    }
+
+    // --- 核心：渲染带视频预览的黄色块 ---
+  function renderSegmentsOnBar(safeId, markers, duration) {
+        const container = document.getElementById(`segments-${safeId}`);
+        const previewBox = document.getElementById(`preview-${safeId}`);
+        const videoEl = document.getElementById(safeId).querySelector('video');
+
+        markers.forEach(m => {
+            if (m.time === 0 && m.end_time === 0) return;
+
+            const seg = document.createElement('div');
+            seg.className = 'mini-segment';
+            seg.style.left = (m.time / duration * 100) + '%';
+            seg.style.width = ((m.end_time - m.time) / duration * 100) + '%';
+
+            seg.onmouseenter = () => {
+                const isVideo = m.thumbnail && m.thumbnail.endsWith('.mp4');
+                const mediaUrl = isVideo ? `${API}${m.thumbnail}` : m.thumbnail;
+
+                previewBox.innerHTML = `
+                    ${isVideo ? 
+                        `<video src="${mediaUrl}" autoplay loop muted playsinline></video>` : 
+                        `<img src="${mediaUrl}">`
+                    }
+                    <div class="desc">${m.pose || '片段'}<br>[${formatTime(m.time)}-${formatTime(m.end_time)}]</div>
+                `;
+
+                previewBox.style.display = 'block';
+                
+                // --- 【核心修复逻辑：边界处理】 ---
+                const previewWidth = 180; // 与 CSS 里的 width: 180px 一致
+                const containerWidth = videoEl.offsetWidth; // 获取当前视频容器的实际宽度
+                
+                // 1. 计算原始中心点位置（像素）
+                const midTime = m.time + (m.end_time - m.time) / 2;
+                let targetLeftPx = (midTime / duration) * containerWidth;
+
+                // 2. 边界检查：防止左侧溢出
+                // 如果中心点位置小于预览框的一半，则强行靠左对齐
+                if (targetLeftPx < previewWidth / 2) {
+                    targetLeftPx = previewWidth / 2 + 5; // 留 5px 边距
+                }
+                
+                // 3. 边界检查：防止右侧溢出
+                if (targetLeftPx > containerWidth - previewWidth / 2) {
+                    targetLeftPx = containerWidth - previewWidth / 2 - 5;
+                }
+
+                // 4. 使用像素值进行精确对齐
+                previewBox.style.left = targetLeftPx + "px";
+            };
+
+            seg.onmouseleave = () => {
+                previewBox.style.display = 'none';
+                previewBox.innerHTML = ''; 
+            };
+
+            seg.onclick = (e) => {
+                e.stopPropagation();
+                videoEl.currentTime = m.time;
+                videoEl.play();
+            };
+
+            container.appendChild(seg);
+        });
+    }
+
+    function toggleMute(path) {
+        const safeId = getSafeId(path);
+        const v = document.getElementById(safeId).querySelector('video');
+        const btn = document.getElementById(`vol-${safeId}`);
+        v.muted = !v.muted;
+        btn.innerText = v.muted ? '🔇' : '🔊';
+    }
+
+    function jumpToTag(path) {
+        window.open(`index.html?path=${encodeURIComponent(path)}`, 'VideoMainTagWindow'); 
+    }
+
+    window.seekVideo = (e, safeId) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const videoEl = document.getElementById(safeId).querySelector('video');
+        videoEl.currentTime = ((e.clientX - rect.left) / rect.width) * videoEl.duration;
+    };
+
+    function removePlayer(path) {
+        const safeId = getSafeId(path);
+        const unit = document.getElementById(safeId);
+        if (unit) {
+            if (hlsInstances[path]) { hlsInstances[path].destroy(); delete hlsInstances[path]; }
+            unit.remove();
+        }
+        if (grid.querySelectorAll('.player-unit').length === 0) hint.style.display = 'block';
+    }
+
+    window.manualRemove = (path) => {
+        removePlayer(path);
+        bc.postMessage({ type: 'SYNC_REMOVE', path: path });
+    };
+
+    window.onload = () => bc.postMessage({ type: 'REQUEST_INITIAL_STATE' });
+</script>
+</body>
+</html>

@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>片段同步循环播放墙 - 声音修复版</title>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <style>
+        :root { --bg: #000; --panel: #1a1a1a; --accent: #2ecc71; }
+        body { margin: 0; background: var(--bg); color: #fff; font-family: sans-serif; overflow: hidden; }
+        
+        #player-grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fill, minmax(32%, 1fr)); 
+            gap: 12px; padding: 12px; height: 100vh; box-sizing: border-box; 
+            align-content: flex-start; overflow-y: auto;
+        }
+
+        .unit { 
+            background: #111; position: relative; border-radius: 8px; overflow: hidden; 
+            border: 1px solid #333; aspect-ratio: 16/9; box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+
+        video { width: 100%; height: 100%; display: block; background: #000; cursor: pointer; }
+
+        /* 顶部控制按钮 */
+        .top-ctrls { 
+            position: absolute; top: 8px; right: 8px; 
+            display: flex; gap: 6px; z-index: 20; 
+        }
+        .btn { 
+            border: none; color: white; border-radius: 4px; 
+            cursor: pointer; padding: 4px 10px; font-size: 12px; font-weight: bold;
+            transition: 0.2s;
+        }
+        .close-btn { background: rgba(231, 76, 60, 0.9); }
+        .close-btn:hover { background: #ff4757; }
+        .vol-btn { background: rgba(52, 152, 219, 0.9); min-width: 35px; }
+        .vol-btn:hover { background: #3498db; }
+
+        .label { 
+            position: absolute; bottom: 0; left: 0; width: 100%; 
+            background: rgba(0,0,0,0.7); font-size: 11px; padding: 6px 12px; 
+            pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+
+        .empty { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); color: #444; text-align: center; }
+    </style>
+</head>
+<body>
+
+<div id="player-grid">
+    <div class="empty" id="hint">
+        <h2>等待选择片段...</h2>
+        <p>请在“选择页”勾选视频片段</p>
+    </div>
+</div>
+
+<script>
+    const bc = new BroadcastChannel('segment_stream');
+    const grid = document.getElementById('player-grid');
+    const hlsInstances = {};
+
+    bc.onmessage = (e) => {
+        if (e.data.type === 'ADD') addSegment(e.data.data);
+        if (e.data.type === 'REMOVE') removeSegment(e.data.id);
+        // 响应选择页的心跳/同步请求
+        if (e.data.type === 'HEARTBEAT_PING') bc.postMessage({ type: 'HEARTBEAT_PONG' });
+    };
+
+    function addSegment(data) {
+        if (document.getElementById(`p-${data.id}`)) return;
+
+        document.getElementById('hint').style.display = 'none';
+
+        const unit = document.createElement('div');
+        unit.className = 'unit';
+        unit.id = `p-${data.id}`;
+        unit.innerHTML = `
+            <div class="top-ctrls">
+                <button class="btn vol-btn" id="vol-${data.id}" onclick="toggleMute(${data.id})">🔇</button>
+                <button class="btn close-btn" onclick="closeFromPlayer(${data.id})">关闭</button>
+            </div>
+            <video playsinline onclick="this.paused ? this.play() : this.pause()"></video>
+            <div class="label">${data.label} [片段循环]</div>
+        `;
+        grid.appendChild(unit);
+
+        const video = unit.querySelector('video');
+        
+        // 核心循环逻辑
+        video.ontimeupdate = () => {
+            if (data.end && video.currentTime >= data.end) {
+                video.currentTime = data.start;
+            }
+        };
+
+        // 视频加载与播放逻辑
+        if (data.type === 'm3u8') {
+            if (Hls.isSupported()) {
+                const hls = new Hls();
+                hls.loadSource(data.url);
+                hls.attachMedia(video);
+                hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                    video.currentTime = data.start;
+                    attemptPlay(video, data.id);
+                });
+                hlsInstances[data.id] = hls;
+            }
+        } else {
+            video.src = data.url;
+            video.onloadedmetadata = () => {
+                video.currentTime = data.start;
+                attemptPlay(video, data.id);
+            };
+        }
+    }
+
+    // 智能播放函数：解决声音被拦截问题
+    function attemptPlay(video, id) {
+        video.muted = false; // 先尝试带声音播放
+        video.play().catch(() => {
+            console.log(`片段 ${id} 声音被拦截，切换至静音模式`);
+            video.muted = true;
+            const btn = document.getElementById(`vol-${id}`);
+            if(btn) btn.innerText = '🔇';
+            video.play();
+        });
+    }
+
+    // 切换音量
+    window.toggleMute = (id) => {
+        const unit = document.getElementById(`p-${id}`);
+        const video = unit.querySelector('video');
+        const btn = document.getElementById(`vol-${id}`);
+        video.muted = !video.muted;
+        btn.innerText = video.muted ? '🔇' : '🔊';
+    };
+
+    function removeSegment(id) {
+        const el = document.getElementById(`p-${id}`);
+        if (el) el.remove();
+        if (hlsInstances[id]) {
+            hlsInstances[id].destroy();
+            delete hlsInstances[id];
+        }
+        if (grid.querySelectorAll('.unit').length === 0) {
+            document.getElementById('hint').style.display = 'block';
+        }
+    }
+
+    window.closeFromPlayer = (id) => {
+        removeSegment(id);
+        bc.postMessage({ type: 'SYNC_REMOVE', id: id });
+    }
+
+    window.onload = () => {
+        bc.postMessage({ type: 'REQUEST_SYNC' });
+    };
+</script>
+</body>
+</html>

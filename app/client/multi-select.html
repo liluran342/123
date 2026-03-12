@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>多路播放筛选中心 - 全能版</title>
+    <style>
+        :root { --bg: #0f0f0f; --panel: #1a1a1a; --accent: #3498db; --text: #eee; --danger: #e74c3c; --segment-bg: #2ecc71; }
+        body { font-family: 'PingFang SC', sans-serif; background: var(--bg); color: var(--text); padding: 20px; margin: 0; }
+        
+        .header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 15px; border-bottom: 1px solid #333; }
+        .open-btn { background: var(--danger); color: white; padding: 10px 20px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; }
+        
+        /* 筛选工具栏 */
+        .filter-section { 
+            background: var(--panel); padding: 15px; border-radius: 8px; margin: 20px 0;
+            display: flex; gap: 20px; align-items: center; flex-wrap: wrap; border: 1px solid #333;
+        }
+        .filter-group { display: flex; align-items: center; gap: 10px; }
+        label { font-size: 12px; color: #888; }
+        select, .btn-check { 
+            padding: 8px 12px; background: #252525; border: 1px solid #444; 
+            color: #fff; border-radius: 4px; cursor: pointer; outline: none;
+        }
+        .btn-check.active { background: var(--accent); border-color: var(--accent); }
+
+        /* 网格布局 */
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px; }
+        .video-card { 
+            background: var(--panel); border-radius: 10px; overflow: hidden; 
+            border: 2px solid transparent; transition: 0.3s; cursor: pointer; position: relative;
+        }
+        .video-card.selected { border-color: var(--accent); box-shadow: 0 0 15px rgba(52, 152, 219, 0.4); }
+        .video-card img, .video-card video { width: 100%; aspect-ratio: 16/9; object-fit: cover; background: #000; display: block; }
+
+        .video-info { padding: 10px; }
+        .v-title { font-size: 13px; font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 5px; }
+        .v-meta { display: flex; justify-content: space-between; font-size: 11px; color: #666; }
+
+        /* 选中与删除标记 */
+        .check-badge { position: absolute; top: 10px; right: 10px; width: 22px; height: 22px; background: rgba(0,0,0,0.5); border-radius: 50%; display: flex; align-items: center; justify-content: center; z-index: 5; }
+        .selected .check-badge { background: var(--accent); color: white; }
+        .res-tag { font-size: 9px; background: #27ae60; color: white; padding: 1px 4px; border-radius: 3px; }
+        
+        /* 片段特有标签 */
+        .segment-tag { position: absolute; bottom: 10px; left: 10px; background: var(--segment-bg); color: white; font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
+        /* 锁定状态的卡片 */
+.video-card.is-locked {
+    cursor: not-allowed;
+    filter: grayscale(1);
+    opacity: 0.7;
+}
+
+/* 锁定遮罩层 */
+.lock-mask {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    color: #f1c40f;
+    backdrop-filter: blur(5px); /* 增加模糊感，看不清封面 */
+}
+
+.lock-mask .lock-icon { font-size: 30px; margin-bottom: 5px; }
+.lock-mask .lock-timer { font-size: 12px; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>🎬 视频/片段 综合筛选</h1>
+    <div>
+        已选择: <span id="count-tag" style="color:var(--accent); font-weight:bold;">0</span>
+        <button onclick="openPlayer()" class="open-btn" style="margin-left: 20px;">开启播放墙</button>
+    </div>
+</div>
+
+<div class="filter-section">
+    <!-- 【核心新增】显示模式切换 -->
+    <div class="filter-group">
+         <label style="color:#ff0050">播放模式:</label>
+    <select id="play-mode" class="side-select" style="border-color:#ff0050">
+        <option value="grid">多路分屏 (Grid)</option>
+        <option value="douyin">抖音模式 (TikTok)</option>
+    </select>
+        <label style="color:var(--accent)">显示模式:</label>
+        <select id="display-mode" onchange="applyFilters()" style="border-color:var(--accent)">
+            <option value="video">整个视频 (Files)</option>
+            <option value="segment">视频片段 (Markers)</option>
+        </select>
+    </div>
+
+    <div class="filter-group">
+        <label>人种:</label>
+        <select id="race-filter" onchange="onRaceChange()"><option value="">全部</option></select>
+    </div>
+
+    <div class="filter-group">
+        <label>演员:</label>
+        <select id="actor-filter" onchange="applyFilters()"><option value="">全部</option></select>
+    </div>
+
+    <div class="filter-group">
+        <label>分辨率:</label>
+        <select id="res-filter" onchange="applyFilters()">
+            <option value="">全部</option>
+            <option value="4K">4K</option>
+            <option value="1080P">1080P</option>
+            <option value="720P">720P</option>
+        </select>
+    </div>
+
+    <button class="btn-check" onclick="resetFilters()" style="margin-left: auto;">重置</button>
+</div>
+
+<div id="video-grid" class="grid"></div>
+
+<script>
+    const API = 'http://localhost:3000';
+    const bc = new BroadcastChannel('video_multi_stream');
+    
+    let allVideos = [];
+    let allMarkers = [];
+    let videoCovers = {};
+    let globalConfig = {};
+    let selectedItems = new Set(); // 存储选中的 key (可能是 path 或者是 marker_id)
+
+    function getSafeId(path) { return btoa(encodeURIComponent(path)).replace(/=/g, ''); }
+    function formatTime(s) { const m=Math.floor(s/60); const sec=Math.floor(s%60); return `${m}:${sec.toString().padStart(2,'0')}`; }
+
+    // 监听来自播放页的消息
+    bc.onmessage = (e) => {
+        // 逻辑 A：播放页点击关闭，同步取消勾选
+        if (e.data.type === 'SYNC_REMOVE') {
+            selectedItems.delete(e.data.path); // 这里 path 可能是路径或 seg_id
+            document.getElementById('count-tag').innerText = selectedItems.size;
+            applyFilters(); // 刷新界面勾选状态
+        }
+
+        // 逻辑 B：【核心修复】播放页刚打开，请求同步所有已勾选的数据
+        if (e.data.type === 'REQUEST_INITIAL_STATE') {
+            console.log("收到播放页同步请求，正在发送已选数据...");
+            
+            selectedItems.forEach(key => {
+                if (key.startsWith('seg_')) {
+                    // --- 同步片段模式的数据 ---
+                    const markerId = parseInt(key.replace('seg_', ''));
+                    const m = allMarkers.find(item => item.id === markerId);
+                    if (m) {
+                        const parentVideo = allVideos.find(v => v.path === m.video_path);
+                        bc.postMessage({ 
+                            type: 'ADD', 
+                            video: {
+                                path: key, // 使用 key 作为唯一标识
+                                realPath: m.video_path, // 真实的视频文件路径
+                                name: `[片段] ${m.actor}-${m.pose}`,
+                                url: `${API}/content/${parentVideo.relativeUrl}`,
+                                type: parentVideo.type,
+                                startTime: m.time ,
+                                  endTime: m.end_time // 【新增】同步结束时间
+                            } 
+                        });
+                    }
+                } else {
+                    // --- 同步整个视频模式的数据 ---
+                    const v = allVideos.find(item => item.path === key);
+                    if (v) {
+                        bc.postMessage({ 
+                            type: 'ADD', 
+                            video: { 
+                                path: v.path, 
+                                name: v.name, 
+                                url: `${API}/content/${v.relativeUrl}`, 
+                                type: v.type 
+                            } 
+                        });
+                    }
+                }
+            });
+        }
+    };
+    async function init() {
+        const [vRes, mRes, cRes, confRes] = await Promise.all([
+            fetch(`${API}/api/videos`).then(r => r.json()),
+            fetch(`${API}/api/all-markers`).then(r => r.json()),
+            fetch(`${API}/api/covers`).then(r => r.json()),
+            fetch(`${API}/api/config`).then(r => r.json())
+        ]);
+
+        allVideos = vRes.data || [];
+        allMarkers = mRes.data || [];
+        globalConfig = confRes;
+        cRes.data.forEach(c => videoCovers[c.video_path] = c.thumbnail);
+
+        const raceSelect = document.getElementById('race-filter');
+        globalConfig.races.forEach(r => raceSelect.innerHTML += `<option value="${r.name}">${r.name}</option>`);
+
+        applyFilters();
+    }
+
+    function onRaceChange() {
+        const race = document.getElementById('race-filter').value;
+        const actorSelect = document.getElementById('actor-filter');
+        actorSelect.innerHTML = '<option value="">全部</option>';
+        if (race) {
+            globalConfig.actors.filter(a => a.race_name === race).forEach(a => {
+                actorSelect.innerHTML += `<option value="${a.name}">${a.name}</option>`;
+            });
+        }
+        applyFilters();
+    }
+
+  function applyFilters() {
+    const mode = document.getElementById('display-mode').value;
+    const race = document.getElementById('race-filter').value;
+    const actor = document.getElementById('actor-filter').value;
+    const res = document.getElementById('res-filter').value;
+
+    if (mode === 'video') {
+        const filtered = allVideos.filter(v => {
+            if (race && v.race !== race) return false;
+            if (actor && v.actor !== actor) return false;
+            if (res) {
+                const h = v.media?.height || 0;
+                if (res === '4K' && h < 2160) return false;
+                if (res === '1080P' && (h < 1080 || h >= 2160)) return false;
+                if (res === '720P' && (h < 720 || h >= 1080)) return false;
+            }
+            return true;
+        });
+        renderVideos(filtered);
+    } else {
+        // 1. 先过滤
+        let filtered = allMarkers.filter(m => {
+            if (m.time === 0 && m.end_time === 0) return false; 
+            if (race && m.race !== race) return false;
+            if (actor && m.actor !== actor) return false;
+            if (res) {
+                const parentVideo = allVideos.find(v => v.path === m.video_path);
+                const h = parentVideo?.media?.height || 0;
+                if (res === '4K' && h < 2160) return false;
+                if (res === '1080P' && (h < 1080 || h >= 2160)) return false;
+            }
+            return true;
+        });
+
+        // 2. 后排序 (移出 filter 内部)
+        filtered.sort((a, b) => {
+            if (b.is_favorite !== a.is_favorite) return b.is_favorite - a.is_favorite;
+            return b.id - a.id;
+        });
+
+        renderSegments(filtered);
+    }
+}
+
+    // 渲染整个视频模式
+ function renderVideos(videos) {
+    const grid = document.getElementById('video-grid');
+    grid.innerHTML = '';
+    videos.forEach(v => {
+        const itemKey = v.path; // 统一使用 path 作为 Key
+        const isSelected = selectedItems.has(itemKey);
+        const thumb = videoCovers[v.path] || '';
+        const card = document.createElement('div');
+        card.className = `video-card ${isSelected ? 'selected' : ''}`;
+        card.innerHTML = `
+            <div class="check-badge">${isSelected ? '✓' : ''}</div>
+            <img src="${thumb}" onerror="this.style.opacity='0.2'">
+            <div class="video-info">
+                <div class="v-title">${v.name}</div>
+                <div class="v-meta">
+                    <span>${v.dateAdded || ''}</span>
+                    <span style="color:var(--accent)">${v.actor || '未标记'}</span>
+                </div>
+            </div>
+        `;
+        // 修复：点击事件使用正确的变量 v
+        card.onclick = () => toggleSelect(itemKey, {
+            path: v.path,
+            name: v.name,
+            url: `${API}/content/${v.relativeUrl}`,
+            type: v.type
+        }, card);
+        grid.appendChild(card);
+    });
+}
+
+function renderSegments(markers) {
+    const grid = document.getElementById('video-grid');
+    grid.innerHTML = '';
+
+    if (!markers || markers.length === 0) {
+        grid.innerHTML = '<div style="padding:100px; color:#444; width:100%; text-align:center;">没有找到匹配的片段</div>';
+        return;
+    }
+
+    markers.forEach(m => {
+        const itemKey = `seg_${m.id}`;
+        const isSelected = selectedItems.has(itemKey);
+        const isFavorite = m.is_favorite === 1;
+        const isVideoThumb = m.thumbnail && m.thumbnail.endsWith('.mp4');
+        const mediaUrl = isVideoThumb ? `${API}${m.thumbnail}` : m.thumbnail;
+        const parentVideo = allVideos.find(v => v.path === m.video_path);
+        
+        let resTag = '';
+        if (parentVideo && parentVideo.media) {
+            const h = parentVideo.media.height;
+            const resText = h >= 1080 ? (h >= 2160 ? '4K' : '1080P') : h + 'P';
+            resTag = `<span class="res-tag">${resText}</span>`;
+        }
+
+        const card = document.createElement('div');
+        card.className = `video-card ${isSelected ? 'selected' : ''}`;
+        if (isFavorite) card.style.border = "1px solid #ff0050";
+
+        card.innerHTML = `
+            <div class="check-badge">${isSelected ? '✓' : ''}</div>
+            ${isFavorite ? `<div class="like-heart" style="position:absolute; top:8px; left:8px; color:#ff0050; z-index:10;">❤</div>` : ''}
+            <div style="position:relative; width:100%; aspect-ratio:16/9; background:#000; overflow:hidden;">
+                ${isVideoThumb ? 
+                    `<video src="${mediaUrl}" muted loop onmouseenter="this.play()" onmouseleave="this.pause()" style="width:100%; height:100%; object-fit:cover;"></video>` : 
+                    `<img src="${mediaUrl}" style="width:100%; height:100%; object-fit:cover;">`
+                }
+                <span class="segment-tag" style="position:absolute; bottom:5px; right:5px; background:rgba(0,0,0,0.7); color:#fff; font-size:10px; padding:2px 4px;">${formatTime(m.time)} - ${formatTime(m.end_time)}</span>
+            </div>
+            <div class="video-info">
+                <div class="v-title">[${m.pose || '未定义'}]</div>
+                <div class="v-meta">
+                    <span style="color:var(--accent)">${m.actor}</span>
+                    ${resTag}
+                </div>
+            </div>
+        `;
+
+        card.onclick = () => {
+            if (parentVideo) {
+                toggleSelect(itemKey, {
+                    id: m.id,
+                    path: itemKey, // 选中的唯一标识
+                    realPath: m.video_path,
+                    name: `[片段] ${m.actor}-${m.pose}`,
+                    url: `${API}/content/${parentVideo.relativeUrl}`,
+                    type: parentVideo.type,
+                    startTime: m.time,
+                    endTime: m.end_time,
+                    is_favorite: m.is_favorite
+                }, card);
+            }
+        };
+        grid.appendChild(card);
+    });
+}
+
+    // 渲染片段模式
+ /**
+ * 渲染片段模式的列表
+ * @param {Array} markers 标记数据数组
+ */
+
+
+    function toggleSelect(key, data, cardEl) {
+        if (selectedItems.has(key)) {
+            selectedItems.delete(key);
+            cardEl.classList.remove('selected');
+            cardEl.querySelector('.check-badge').innerText = '';
+            bc.postMessage({ type: 'REMOVE', path: data.path });
+        } else {
+            selectedItems.add(key);
+            cardEl.classList.add('selected');
+            cardEl.querySelector('.check-badge').innerText = '✓';
+            bc.postMessage({ type: 'ADD', video: data });
+        }
+        document.getElementById('count-tag').innerText = selectedItems.size;
+    }
+
+    function resetFilters() {
+        document.getElementById('race-filter').value = '';
+        document.getElementById('actor-filter').innerHTML = '<option value="">全部</option>';
+        document.getElementById('res-filter').value = '';
+        applyFilters();
+    }
+
+     function openPlayer() {
+        const mode = document.getElementById('play-mode').value;
+        
+        if (mode === 'douyin') {
+            // 抖音模式：把当前选中的所有数据存入缓存并打开新页面
+            const playlist = [];
+            selectedItems.forEach(key => {
+                if (key.startsWith('seg_')) {
+                    const id = parseInt(key.replace('seg_', ''));
+                    const m = allMarkers.find(item => item.id === id);
+                    if (m) {
+                        const v = allVideos.find(vid => vid.path === m.video_path);
+                        playlist.push({
+                            id: m.id,
+                            url: `${API}/content/${v.relativeUrl}`,
+                            start: m.time,
+                            end: m.end_time,
+                            actor: m.actor,
+                            pose: m.pose,
+                            type: v.type,
+                            is_favorite: m.is_favorite // 【必须传递此字段】
+                        });
+                    }
+                }
+            });
+            
+            if (playlist.length === 0) return alert("请先在‘视频片段’模式下勾选片段！");
+            
+            // 使用 localStorage 传递大数据列表
+            localStorage.setItem('douyin_playlist', JSON.stringify(playlist));
+            window.open('douyin-player.html', 'DouyinPlayerWindow');
+        } else {
+            // 原有的多路播放逻辑
+            window.open('multi-player.html', 'VideoMultiPlayerName');
+        }
+    }
+
+    init();
+</script>
+</body>
+</html>
